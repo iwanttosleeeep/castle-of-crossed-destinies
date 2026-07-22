@@ -1,6 +1,6 @@
 # The Castle of Crossed Destinies
 
-一个将可自动化命理 API 置于同一审计框架的 MVP。紫微斗数上传、解析与报告已明确排除。
+一个将可自动化命理 API 置于同一审计框架的 MVP。
 
 ## 包含内容
 
