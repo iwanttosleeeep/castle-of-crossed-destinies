@@ -1,0 +1,12 @@
+# Python
+backend/.venv/
+backend/**/__pycache__/
+*.py[cod]
+
+# Node / Vite
+frontend/node_modules/
+frontend/dist/
+
+# Local configuration
+backend/.env
+.DS_Store
