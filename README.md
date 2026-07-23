@@ -61,7 +61,11 @@ western | Mercury | 9th house
 
 ## 配置 DeepSeek
 
-复制并填写仅存放在服务器上的环境文件：
+支持两种方式：
+
+1. **访客 BYOK**：在首页输入 Key。Key 只保存在当前页面内存，经 HTTPS
+   通过 `X-DeepSeek-Key` 发送给后端后立即转发；不写入 localStorage、数据库或日志。
+2. **自托管默认 Key**：复制并填写仅存放在服务器上的环境文件：
 
 ```bash
 cp backend/.env.example backend/.env
@@ -73,5 +77,6 @@ DEEPSEEK_MODEL=deepseek-v4-flash
 ```
 
 `DEEPSEEK_API_KEY` 仅由后端读取，绝不能放入前端代码或 Git。
+通过公网使用 BYOK 必须启用 HTTPS；HTTP 部署只应使用服务器端 `.env`。
 
 > 命理输出仅供反思与娱乐，不应用于医疗、法律、财务或其他重大决定。

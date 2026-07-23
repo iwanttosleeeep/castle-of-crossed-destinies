@@ -1,7 +1,8 @@
 import asyncio
+from typing import Annotated
 from contextlib import asynccontextmanager
 from datetime import datetime
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from .deepseek import run_chamber_skill
 from .providers import SYSTEMS, generate_chamber, parse_facts
@@ -23,16 +24,27 @@ async def health():
 
 
 @app.post("/reports", response_model=ReportResponse)
-async def create_report(request: ReportRequest):
+async def create_report(
+    request: ReportRequest,
+    deepseek_key: Annotated[str | None, Header(alias="X-DeepSeek-Key")] = None,
+    deepseek_model: Annotated[str | None, Header(alias="X-DeepSeek-Model")] = None,
+):
     selected = list(dict.fromkeys(request.systems))
     invalid = set(selected) - SYSTEMS.keys()
     if invalid:
         raise HTTPException(422, f"Unsupported systems: {', '.join(invalid)}")
+    allowed_models = {"deepseek-v4-flash", "deepseek-v4-pro"}
+    if deepseek_model and deepseek_model not in allowed_models:
+        raise HTTPException(422, "Unsupported DeepSeek model")
     supplied = parse_facts(request.facts_text)
     chambers = [generate_chamber(system, request.profile, supplied[system]) for system in selected]
     verified = {chamber.system_id for chamber in chambers if chamber.source_type == "user_dossier"}
     results = await asyncio.gather(
-        *(run_chamber_skill(system, supplied[system]) for system in selected if system in verified)
+        *(
+            run_chamber_skill(system, supplied[system], deepseek_key, deepseek_model)
+            for system in selected
+            if system in verified
+        )
     )
     claims = [claim for chamber_claims, _ in results for claim in chamber_claims]
     run_warnings = [warning for _, warning in results if warning]

@@ -41,9 +41,14 @@ def persona_instructions(system_id: str) -> str:
     return path.read_text(encoding="utf-8")
 
 
-async def run_chamber_skill(system_id: str, facts: list[Fact]) -> tuple[list[Claim], str | None]:
+async def run_chamber_skill(
+    system_id: str,
+    facts: list[Fact],
+    request_api_key: str | None = None,
+    request_model: str | None = None,
+) -> tuple[list[Claim], str | None]:
     """Build neutral claims, then style them in an isolated persona pass."""
-    api_key = os.getenv("DEEPSEEK_API_KEY")
+    api_key = request_api_key or os.getenv("DEEPSEEK_API_KEY")
     if not api_key:
         return [], "DeepSeek 尚未配置；已保存事实档案，但没有生成解释性证词。"
     allowed_ids = {fact.id for fact in facts}
@@ -58,7 +63,7 @@ Return no claims if evidence is insufficient. Do not use a persona or decorative
 Do not reveal chain-of-thought."""
     dossier = [{"id": fact.id, "label": fact.label, "value": fact.value, "time_sensitive": fact.time_sensitive} for fact in facts]
     payload = {
-        "model": os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash"),
+        "model": request_model or os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash"),
         "messages": [{"role": "system", "content": system}, {"role": "user", "content": f"JSON dossier for {system_id}:\n{json.dumps(dossier, ensure_ascii=False)}"}],
         "response_format": {"type": "json_object"},
         "thinking": {"type": "enabled"},
@@ -96,11 +101,16 @@ Do not reveal chain-of-thought."""
             )
         )
     if claims:
-        claims = await style_claims(system_id, claims, api_key)
+        claims = await style_claims(system_id, claims, api_key, request_model)
     return claims, None
 
 
-async def style_claims(system_id: str, claims: list[Claim], api_key: str) -> list[Claim]:
+async def style_claims(
+    system_id: str,
+    claims: list[Claim],
+    api_key: str,
+    request_model: str | None = None,
+) -> list[Claim]:
     """Apply voice without giving the style pass access to chart facts or other chambers."""
     system = f"""{persona_instructions(system_id)}
 
@@ -115,7 +125,7 @@ If safe framing is not possible, repeat the neutral statement exactly."""
         for index, claim in enumerate(claims)
     ]
     payload = {
-        "model": os.getenv("DEEPSEEK_STYLE_MODEL", os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash")),
+        "model": request_model or os.getenv("DEEPSEEK_STYLE_MODEL", os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash")),
         "messages": [
             {"role": "system", "content": system},
             {"role": "user", "content": json.dumps(neutral_claims, ensure_ascii=False)},

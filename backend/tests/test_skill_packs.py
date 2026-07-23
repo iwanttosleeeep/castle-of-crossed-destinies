@@ -75,6 +75,23 @@ class SkillPackTests(unittest.TestCase):
 
 
 class ChamberRunnerTests(unittest.IsolatedAsyncioTestCase):
+    async def test_request_scoped_key_and_model_are_forwarded_without_environment_storage(self):
+        mocked_call = AsyncMock(return_value={"claims": []})
+        with patch.dict("os.environ", {}, clear=True):
+            with patch("backend.app.deepseek.call_json", mocked_call):
+                claims, warning = await run_chamber_skill(
+                    "western",
+                    [Fact(id="western.sun-1", label="Sun", value="Aries")],
+                    request_api_key="visitor-key",
+                    request_model="deepseek-v4-pro",
+                )
+
+        self.assertIsNone(warning)
+        self.assertEqual(claims, [])
+        payload, api_key = mocked_call.await_args.args
+        self.assertEqual(api_key, "visitor-key")
+        self.assertEqual(payload["model"], "deepseek-v4-pro")
+
     async def test_persona_pass_cannot_replace_neutral_testimony(self):
         neutral_response = {
             "claims": [
