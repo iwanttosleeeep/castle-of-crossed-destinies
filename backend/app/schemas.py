@@ -38,9 +38,13 @@ class Chamber(BaseModel):
 class Claim(BaseModel):
     id: str
     system_id: str
+    neutral_statement: str
     statement: str
     themes: list[str]
     evidence_ids: list[str]
+    rule_ids: list[str]
+    caveat: str
+    counter_reading: str
     confidence: float
     specificity: float
     barnum_risk: float

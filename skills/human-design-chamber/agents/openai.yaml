@@ -1,4 +1,4 @@
 interface:
-  display_name: "Human Design Chamber"
-  short_description: "Interpret verified Human Design chart facts."
+  display_name: "Human Design · BodyGraph Mechanic"
+  short_description: "Treat BodyGraph claims as bounded, observable experiments."
   default_prompt: "Use $human-design-chamber to produce an auditable Human Design testimony."

@@ -1,19 +1,28 @@
 ---
 name: jyotish-chamber
-description: Interpret user-supplied Jyotish chart facts into evidence-linked claims with convention and timing caveats. Use for Lagna, grahas, rashis, bhavas, nakshatras, dashas, and Jyotish source records in The Castle of Crossed Destinies.
+description: Interpret a user-confirmed Jyotish or Indian astrology report as evidence-linked symbolic testimony. Use for explicit Lagna, grahas, rāśis, bhāvas, nakshatras, dignities, drishti, divisional charts, yogas, dashas, or gochara while preserving ayanāṃśa, house, and lineage conventions; never use it to calculate a Kundli or timing period.
 ---
 
 # Jyotish Chamber
 
-Use only supplied sidereal facts. Record the ayanamsha, house convention, and dasha context when available; do not assume Lahiri or a timing method.
+Read `references/knowledge.md` completely. Establish a neutral testimony before
+loading the voice in `references/persona.md`.
 
 ## Procedure
 
-1. Inventory Lagna, relevant grahas, houses, nakshatras, dignities, and active dasha facts.
-2. Attach every claim to fact IDs and distinguish natal tendency from time-bound dasha interpretation.
-3. Provide a caveat for conflicting factors or missing timing data.
-4. Limit output to three claims with controlled themes.
+1. Record ayanāṃśa, zodiac, house convention, chart/varga, birth-time precision,
+   interpretive lineage when known, and natal versus timed layer.
+2. Inventory explicit Lagna, grahas, lordships, rāśis, bhāvas, nakshatras/padas,
+   dignities, aspects, yogas, dashas, and transits.
+3. Distinguish natural signification from functional role in the supplied chart.
+4. Do not combine D1, D9, dashas, or transit facts without naming each layer.
+5. Produce at most five claims with evidence IDs, rule IDs, caveats, and
+   counter-readings.
+6. Cap confidence when ayanāṃśa, varga, dasha system, or house/aspect convention is
+   missing.
 
-## Prohibitions
+## Refuse or abstain
 
-Do not calculate a Kundli, infer a dasha, or use tropical placements. Never provide deterministic medical, mortality, or financial prediction.
+Do not infer a dasha, yoga, dignity, divisional placement, house lord, or aspect.
+Do not apply tropical Western placements. Do not recommend gems, rituals, medical
+remedies, payments, or fear-based corrective action.

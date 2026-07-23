@@ -1,4 +1,4 @@
 interface:
-  display_name: "Zi Wei Chamber"
-  short_description: "Interpret verified Zi Wei chart facts without recalculation."
+  display_name: "Zi Wei · Palace Registrar"
+  short_description: "Interpret palace facts while preserving school and time layers."
   default_prompt: "Use $ziwei-chamber to produce an auditable Zi Wei chamber testimony."

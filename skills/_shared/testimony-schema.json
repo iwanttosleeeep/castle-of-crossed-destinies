@@ -1,0 +1,16 @@
+{
+  "claims": [
+    {
+      "neutral_statement": "string",
+      "statement": "string",
+      "themes": ["identity_orientation"],
+      "evidence_ids": ["system.fact-id"],
+      "rule_ids": ["SYSTEM-RULE-001"],
+      "caveat": "string",
+      "counter_reading": "string",
+      "confidence": 0.0,
+      "specificity": 0.0,
+      "barnum_risk": 0.0
+    }
+  ]
+}

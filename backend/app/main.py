@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 from datetime import datetime
 from fastapi import FastAPI, HTTPException
@@ -30,7 +31,9 @@ async def create_report(request: ReportRequest):
     supplied = parse_facts(request.facts_text)
     chambers = [generate_chamber(system, request.profile, supplied[system]) for system in selected]
     verified = {chamber.system_id for chamber in chambers if chamber.source_type == "user_dossier"}
-    results = [await run_chamber_skill(system, supplied[system]) for system in selected if system in verified]
+    results = await asyncio.gather(
+        *(run_chamber_skill(system, supplied[system]) for system in selected if system in verified)
+    )
     claims = [claim for chamber_claims, _ in results for claim in chamber_claims]
     run_warnings = [warning for _, warning in results if warning]
     sensitivity = "high" if request.profile.time_precision != "unknown" else "moderate"

@@ -6,6 +6,8 @@
 
 - 出生资料表单、时间精度披露与报告状态流
 - 七个项目内、版本可控的 Chamber Skills：`skills/*-chamber/`
+- 共享证据契约、受控主题词表、每套体系独立知识边界与来源
+- 中性证词与人物语气分两次生成；Tribunal 只读取中性证词
 - 手动导入的盘面事实 → Skill 证词 → Tribunal 审计数据流
 - 共识、冲突、交叉质询、Barnum 风险与证据可追溯性界面
 - 没有可核验盘面事实时，不生成解释性结论
@@ -51,7 +53,11 @@ ziwei | 命宫主星 | 紫微、天府
 western | Mercury | 9th house
 ```
 
-后端不会自行排盘。随后它会把每间 chamber 的事实和相应 `skills/<system>-chamber/SKILL.md` 单独传给 DeepSeek；所有 claim 都必须回指事实 ID。未配置 Key 时，事实仍可预览，但不会生成解释。
+后端不会自行排盘。随后它会把每间 chamber 的事实、共享证据契约、
+`SKILL.md` 与 `references/knowledge.md` 单独传给 DeepSeek；所有 claim 都必须
+同时回指事实 ID 与知识包中的规则 ID。第一遍只生成中性证词，第二遍只根据
+`references/persona.md` 改写语气。Tribunal 应始终使用 `neutral_statement`，
+而不是人物化后的 `statement`。未配置 Key 时，事实仍可预览，但不会生成解释。
 
 ## 配置 DeepSeek
 

@@ -1,4 +1,4 @@
 interface:
-  display_name: "Dreamspell Chamber"
-  short_description: "Interpret Dreamspell facts as a modern symbolic system."
+  display_name: "Dreamspell · Dream Courier"
+  short_description: "Read modern Dreamspell symbols without claiming Maya authority."
   default_prompt: "Use $dreamspell-chamber to produce an auditable Dreamspell testimony."

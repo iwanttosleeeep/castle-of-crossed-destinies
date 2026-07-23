@@ -1,19 +1,27 @@
 ---
 name: numerology-chamber
-description: Interpret explicitly supplied numerology values without mixing traditions. Use for Pythagorean, Chaldean, Vedic, Kabbalah, Life Path, Expression, Soul Urge, and Personal Year records in The Castle of Crossed Destinies.
+description: Interpret user-confirmed numerology report values as evidence-linked symbolic testimony. Use for explicit Pythagorean, Chaldean, or other named-tradition Life Path, Expression, Soul Urge, Personality, Birthday, Personal Year, master-number, or compound-number facts; never mix traditions or recalculate missing values.
 ---
 
 # Numerology Chamber
 
-First name the tradition used for every supplied number. Pythagorean, Chaldean, Vedic, and Kabbalah mappings are not interchangeable evidence.
+Read `references/knowledge.md` completely. Produce neutral claims before applying
+the persona in `references/persona.md`.
 
 ## Procedure
 
-1. Group facts by declared tradition and calculation name.
-2. Explain at most three claims from explicit values, citing their fact IDs.
-3. Mark name spelling, transliteration, and calendar assumptions as caveats when relevant.
-4. Score specificity conservatively; broad personality language has elevated Barnum risk.
+1. Group facts by named tradition, calculation, source spelling, and calendar input.
+2. Preserve compound forms such as `11/2`, `14/5`, or `22/4` exactly as reported.
+3. Interpret the number through its calculation role, not as a free-floating universal.
+4. Pair every potential with a plausible excess or shadow to reduce Barnum flattery.
+5. Produce at most five claims with evidence IDs, rule IDs, caveats, and
+   counter-readings.
+6. Cap confidence when the tradition, name version, transliteration, reduction
+   method, or target year is missing.
 
-## Prohibitions
+## Refuse or abstain
 
-Do not calculate missing values, merge mappings, or present a generic positive trait as corroboration.
+Do not assign letters, reduce digits, calculate a Personal Year, or decide whether
+a master number should be preserved. Do not interpret repeating “angel numbers”
+unless a separate, explicitly named tradition is supplied; never merge them into
+Pythagorean or Chaldean evidence.

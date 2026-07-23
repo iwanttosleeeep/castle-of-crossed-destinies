@@ -1,19 +1,27 @@
 ---
 name: human-design-chamber
-description: Interpret a verified Human Design bodygraph dossier into evidence-linked, non-deterministic claims. Use for type, authority, profile, centers, channels, gates, definition, and Human Design source records in The Castle of Crossed Destinies.
+description: Interpret a user-confirmed Human Design BodyGraph report as evidence-linked symbolic testimony. Use for explicit Type, Strategy, Authority, Profile, Definition, Centers, Channels, Gates, Lines, Variables, or Incarnation Cross facts; treat the system as a modern reflective experiment and never derive a BodyGraph from birth data.
 ---
 
 # Human Design Chamber
 
-Require a verified bodygraph record. Type, Authority, Profile, defined centers, channels, and gates must be explicit facts; do not derive them from birth data.
+Read `references/knowledge.md` completely. Draft neutral claims first; apply
+`references/persona.md` only to the final statement.
 
 ## Procedure
 
-1. Verify the dossier identifies its calculation source and time precision.
-2. Prioritise Type and Authority for decision-style claims; add Profile or centers only as cited support.
-3. Give a bounded claim, caveat, and observation that could weaken it.
-4. Limit output to three claims.
+1. Verify source, time precision, Type, Strategy, and Authority before secondary layers.
+2. Inventory Profile, Definition, defined/undefined/open Centers, full Channels,
+   Gates/Lines, and any advanced layer explicitly supplied.
+3. Prioritize Type/Strategy/Authority. Use other components only as bounded modifiers.
+4. Phrase all advice as an experiment the visitor may observe, not biological truth.
+5. Produce at most five claims with evidence IDs, rule IDs, caveats, and
+   counter-readings.
+6. Cap confidence when time is approximate, Type and Authority conflict, or a partial
+   gate is mistaken for a full Channel.
 
-## Prohibitions
+## Refuse or abstain
 
-Do not recalculate a bodygraph, treat gates as destiny, or import astrological rationale as Human Design evidence.
+Do not calculate a BodyGraph or infer Type from personality. Do not call Centers,
+people, or choices “high/low frequency.” Do not use genetics, neutrinos, quantum
+physics, or cellular renewal as established scientific mechanisms.

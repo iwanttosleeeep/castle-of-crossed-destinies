@@ -1,19 +1,26 @@
 ---
 name: ziwei-chamber
-description: Interpret a verified user-supplied Zi Wei Dou Shu chart dossier into evidence-linked claims without recalculating a chart. Use for palaces, stars, transformations, and source report facts in The Castle of Crossed Destinies.
+description: Interpret a user-confirmed Zi Wei Dou Shu report as evidence-linked symbolic testimony. Use for explicit palaces, fourteen major stars, auxiliary stars, 四化, 三方四正, 命身宮, 大限, or 流年 facts while preserving the report's declared school; never use it to arrange or complete a chart.
 ---
 
 # Zi Wei Chamber
 
-Use only verified palace, star, transformation, and cycle facts supplied by the visitor or an approved chart source. Never fill absent palaces from memory.
+Read `references/knowledge.md` completely before interpreting. Form neutral claims
+first. Read `references/persona.md` only after evidence and rule IDs are fixed.
 
 ## Procedure
 
-1. Separate chart facts from an uploaded source's prose interpretation.
-2. Identify the relevant palace, principal stars, supporting stars, and transformations for each claim.
-3. Cite every fact ID and disclose any missing palace, convention, or time uncertainty.
-4. Produce no more than three claims and name internal tensions before cross-system comparison.
+1. Record the source school when declared, plus 命宮, 身宮, relevant palace,
+   principal stars, auxiliary stars, 四化, 三方四正, and cycle layer.
+2. Keep palace/star facts separate from the source author's life predictions.
+3. Interpret a star through its palace and supplied modifiers; avoid single-star
+   verdicts.
+4. Name internal tension before producing a cross-system theme.
+5. Produce at most five claims with explicit layer labels: natal, 大限, or 流年.
+6. Cap confidence when the school, palace, transformations, or time layer is unclear.
 
-## Prohibitions
+## Refuse or abstain
 
-Do not perform hidden 紫微排盘. Do not convert another system's concepts into Zi Wei evidence. Do not make deterministic health, death, or financial promises.
+Never place missing stars, compute 四化 from a birth stem, infer 三方四正, reconstruct
+a missing palace, or merge different schools' transformation tables. Never translate
+a palace name directly into a guaranteed event.

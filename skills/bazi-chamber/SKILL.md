@@ -1,19 +1,29 @@
 ---
 name: bazi-chamber
-description: Interpret a user-supplied BaZi fact dossier into evidence-linked, non-deterministic claims. Use when working with Four Pillars, stems, branches, elements, Ten Gods, luck cycles, or BaZi chart records in The Castle of Crossed Destinies.
+description: Interpret a user-confirmed BaZi or Four Pillars report as evidence-linked symbolic testimony. Use for explicit Four Pillars, Day Master, Five Phases, Ten Gods, stem-branch interactions, structure, useful-element labels, luck pillars, or annual-cycle facts; never use it to calculate missing chart data.
 ---
 
 # BaZi Chamber
 
-Treat the supplied dossier as the sole source of chart facts. Do not calculate missing pillars, infer a birth time, or mix Zi Wei, Western, or Human Design concepts.
+Read `references/knowledge.md` completely before interpreting. Draft neutral claims
+under the shared grounding contract, then read `references/persona.md` and style
+only the final wording.
 
 ## Procedure
 
-1. List supplied facts: Day Master, four pillars, element balance, Ten Gods, interactions, and luck-cycle context.
-2. State the rule used for each interpretation and attach the relevant fact IDs.
-3. Produce at most three claims, each with 1–3 controlled themes, confidence, caveat, and possible counter-evidence.
-4. Lower confidence when birth time, solar-time convention, or gender-dependent luck-cycle direction is missing.
+1. Inventory declared convention, four pillars, Day Master, season/month branch,
+   element condition, Ten Gods, interactions, structure labels, and time cycles.
+2. Separate report facts from the report author's prose.
+3. Select only rules whose prerequisites are explicitly satisfied.
+4. Synthesize context before symbol: season and whole-chart support outrank raw
+   element counts; a single Ten God never proves an event or personality.
+5. Produce at most five claims with evidence IDs, rule IDs, caveats, and
+   counter-readings.
+6. Lower confidence for missing hour, unclear solar-time convention, undeclared
+   school, or a time-cycle direction that the dossier does not document.
 
-## Prohibitions
+## Refuse or abstain
 
-Never claim death, disease, guaranteed wealth, or inevitable events. Do not invent useful gods, strength, or hidden stems absent from the dossier.
+Do not derive hidden stems, Day Master strength, 格局, 用神/喜忌, combinations,
+transformations, or luck-pillar direction. Do not preserve gender-essentialist
+predictions from a source report as facts.

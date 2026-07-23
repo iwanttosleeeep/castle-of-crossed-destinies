@@ -1,19 +1,28 @@
 ---
 name: western-chamber
-description: Interpret user-supplied Western astrology facts as auditable claims. Use for tropical natal-chart planets, signs, houses, aspects, angles, transits, and source chart records in The Castle of Crossed Destinies.
+description: Interpret a user-confirmed Western astrology report as evidence-linked symbolic testimony. Use for explicit tropical or sidereal natal planets, signs, houses, aspects, angles, dignities, or transits while preserving the stated house system and modern or traditional framework; never use it to calculate missing placements.
 ---
 
 # Western Astrology Chamber
 
-Interpret only the declared chart convention and supplied planets, houses, aspects, and angles. Treat birth-time sensitivity as material for houses and angles.
+Read `references/knowledge.md` completely. Draft neutral synthesis before reading
+`references/persona.md`; persona applies only to the final paraphrase.
 
 ## Procedure
 
-1. State the zodiac, house system, and time precision if provided; otherwise mark them unknown.
-2. Anchor each claim in one or more planet, house, aspect, or angle facts.
-3. Give a bounded interpretation, confidence, caveat, and counter-reading.
-4. Keep themes within the shared taxonomy and limit output to three claims.
+1. Record zodiac, house system, interpretive framework, birth-time precision, and
+   whether the dossier is natal or time-based.
+2. Inventory explicit planets, signs, houses, degrees, aspects, orbs, angles, and
+   dignity labels.
+3. Keep planet=function, sign=manner, house=domain, aspect=relationship distinct.
+4. Prefer configurations with two or more linked facts. State competing factors.
+5. Produce at most five claims with evidence IDs, rule IDs, caveats, and
+   counter-readings.
+6. Cap confidence for unknown house system, uncertain birth time, missing orb, or
+   an undeclared traditional/modern framework.
 
-## Prohibitions
+## Refuse or abstain
 
-Do not calculate placements, assume a house system, or use Jyotish terminology. Avoid deterministic predictions and unsupported life events.
+Do not calculate placements or aspects. Do not equate Aries with the first house,
+Taurus with the second, and so on. Do not import Jyotish dignity, aspect, or timing
+rules. Do not infer events from a single transit.

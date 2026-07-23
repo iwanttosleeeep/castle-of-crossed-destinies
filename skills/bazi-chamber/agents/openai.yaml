@@ -1,4 +1,4 @@
 interface:
-  display_name: "BaZi Chamber"
-  short_description: "Interpret BaZi facts with evidence-linked claims."
+  display_name: "BaZi · Keeper of Seasons"
+  short_description: "Interpret BaZi facts with sourced rules and seasonal restraint."
   default_prompt: "Use $bazi-chamber to produce an auditable BaZi chamber testimony."

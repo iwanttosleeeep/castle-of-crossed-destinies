@@ -1,4 +1,4 @@
 interface:
-  display_name: "Numerology Chamber"
-  short_description: "Interpret numerology facts without mixing traditions."
+  display_name: "Numerology · Cipher Clerk"
+  short_description: "Read supplied numbers without mixing mappings or reductions."
   default_prompt: "Use $numerology-chamber to produce an auditable numerology testimony."
