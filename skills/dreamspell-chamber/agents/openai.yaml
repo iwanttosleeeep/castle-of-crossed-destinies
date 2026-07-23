@@ -1,0 +1,4 @@
+interface:
+  display_name: "Dreamspell Chamber"
+  short_description: "Interpret Dreamspell facts as a modern symbolic system."
+  default_prompt: "Use $dreamspell-chamber to produce an auditable Dreamspell testimony."

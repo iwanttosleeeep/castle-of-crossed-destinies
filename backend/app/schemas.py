@@ -15,7 +15,8 @@ class BirthProfile(BaseModel):
 
 class ReportRequest(BaseModel):
     profile: BirthProfile
-    systems: list[str] = ["western", "jyotish", "bazi", "human_design"]
+    systems: list[str] = ["bazi", "ziwei", "western", "jyotish", "numerology", "human_design", "dreamspell"]
+    facts_text: str = Field(default="", max_length=12000)
 
 
 class Fact(BaseModel):
@@ -28,8 +29,8 @@ class Fact(BaseModel):
 class Chamber(BaseModel):
     system_id: str
     display_name: str
-    source_type: Literal["api", "demo"]
-    provider: str
+    source_type: Literal["user_dossier", "unverified"]
+    skill_path: str
     facts: list[Fact]
     warning: str | None = None
 
@@ -47,7 +48,7 @@ class Claim(BaseModel):
 
 class ReportResponse(BaseModel):
     case_id: str
-    mode: Literal["live", "demo"]
+    mode: Literal["skills_ready"]
     time_sensitivity: Literal["high", "moderate", "low"]
     chambers: list[Chamber]
     claims: list[Claim]

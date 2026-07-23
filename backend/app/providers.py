@@ -1,40 +1,34 @@
-import os
-from collections.abc import Mapping
-import httpx
+import re
 from .schemas import BirthProfile, Chamber, Fact
 
+
 SYSTEMS = {
-    "western": ("Western Astrology", "WESTERN"),
-    "jyotish": ("Jyotish", "JYOTISH"),
-    "bazi": ("BaZi 八字", "BAZI"),
-    "human_design": ("Human Design", "HUMAN_DESIGN"),
+    "bazi": "BaZi 八字",
+    "ziwei": "Zi Wei Dou Shu 紫微斗数",
+    "western": "Western Astrology 西占",
+    "jyotish": "Jyotish 印占",
+    "numerology": "Numerology 数秘",
+    "human_design": "Human Design 人类图",
+    "dreamspell": "Dreamspell",
 }
 
 
-def demo_facts(system_id: str) -> list[Fact]:
-    data = {
-        "western": [("sun", "Sun sign", "Aries"), ("mercury", "Mercury", "9th house")],
-        "jyotish": [("lagna", "Lagna", "Sagittarius"), ("jupiter", "Jupiter", "Angular placement")],
-        "bazi": [("day_master", "Day Master", "Yang Wood"), ("element", "Five elements", "Wood / Fire emphasis")],
-        "human_design": [("type", "Type", "Generator"), ("authority", "Authority", "Sacral")],
-    }[system_id]
-    return [Fact(id=f"{system_id}.{key}", label=label, value=value, time_sensitive=system_id != "bazi") for key, label, value in data]
+def parse_facts(text: str) -> dict[str, list[Fact]]:
+    """Parse user-held chart facts, one per line: system | label | value.
 
-
-async def generate_chart(system_id: str, profile: BirthProfile) -> Chamber:
-    """Provider seam: normalise a configured vendor response into a Chamber.
-
-    Vendor-specific field extraction belongs here, never in tribunal code.
+    This intentionally does not calculate charts or call any external service.
     """
-    name, prefix = SYSTEMS[system_id]
-    url, key = os.getenv(f"{prefix}_API_URL"), os.getenv(f"{prefix}_API_KEY")
-    if not (url and key):
-        return Chamber(system_id=system_id, display_name=name, source_type="demo", provider="Demo adapter", facts=demo_facts(system_id), warning="未配置 API 密钥：此 chamber 使用演示数据。")
-    payload = {"name": profile.display_name, "date": profile.birth_date.isoformat(), "time": profile.birth_time.isoformat() if profile.birth_time else None, "place": profile.birthplace_text, "timezone": profile.timezone_name}
-    async with httpx.AsyncClient(timeout=25) as client:
-        response = await client.post(url, json=payload, headers={"Authorization": f"Bearer {key}"})
-        response.raise_for_status()
-        body: Mapping = response.json()
-    # API adapters should replace these generic values with supplier-specific fact paths.
-    facts = [Fact(id=f"{system_id}.provider.response", label="Provider response received", value=str(bool(body)), time_sensitive=system_id != "bazi")]
-    return Chamber(system_id=system_id, display_name=name, source_type="api", provider=url, facts=facts)
+    result = {system_id: [] for system_id in SYSTEMS}
+    for number, line in enumerate(text.splitlines(), start=1):
+        parts = [part.strip() for part in line.split("|", maxsplit=2)]
+        if len(parts) != 3 or parts[0] not in SYSTEMS or not parts[1] or not parts[2]:
+            continue
+        slug = re.sub(r"[^a-z0-9]+", "-", parts[1].lower()).strip("-") or f"fact-{number}"
+        result[parts[0]].append(Fact(id=f"{parts[0]}.{slug}-{number}", label=parts[1], value=parts[2], time_sensitive=parts[0] not in {"numerology", "dreamspell"}))
+    return result
+
+
+def generate_chamber(system_id: str, profile: BirthProfile, supplied_facts: list[Fact]) -> Chamber:
+    if supplied_facts:
+        return Chamber(system_id=system_id, display_name=SYSTEMS[system_id], source_type="user_dossier", skill_path=f"skills/{system_id.replace('_', '-')}-chamber", facts=supplied_facts)
+    return Chamber(system_id=system_id, display_name=SYSTEMS[system_id], source_type="unverified", skill_path=f"skills/{system_id.replace('_', '-')}-chamber", facts=[], warning="尚未提供可核验盘面事实；此 chamber 不会产生解释性结论。")

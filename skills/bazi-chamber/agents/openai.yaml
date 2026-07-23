@@ -1,0 +1,4 @@
+interface:
+  display_name: "BaZi Chamber"
+  short_description: "Interpret BaZi facts with evidence-linked claims."
+  default_prompt: "Use $bazi-chamber to produce an auditable BaZi chamber testimony."

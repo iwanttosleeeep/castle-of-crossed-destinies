@@ -1,0 +1,4 @@
+interface:
+  display_name: "Numerology Chamber"
+  short_description: "Interpret numerology facts without mixing traditions."
+  default_prompt: "Use $numerology-chamber to produce an auditable numerology testimony."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Jyotish Chamber"
+  short_description: "Interpret Jyotish facts with explicit uncertainty."
+  default_prompt: "Use $jyotish-chamber to produce an auditable Jyotish chamber testimony."

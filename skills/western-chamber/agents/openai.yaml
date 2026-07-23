@@ -1,0 +1,4 @@
+interface:
+  display_name: "Western Astrology Chamber"
+  short_description: "Interpret Western chart facts with traceable claims."
+  default_prompt: "Use $western-chamber to produce an auditable Western astrology testimony."

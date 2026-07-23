@@ -1,0 +1,4 @@
+interface:
+  display_name: "Zi Wei Chamber"
+  short_description: "Interpret verified Zi Wei chart facts without recalculation."
+  default_prompt: "Use $ziwei-chamber to produce an auditable Zi Wei chamber testimony."
