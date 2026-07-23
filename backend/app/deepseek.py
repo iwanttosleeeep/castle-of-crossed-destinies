@@ -23,6 +23,15 @@ THEMES = {
     "meaning_imagination",
 }
 RULE_PATTERN = re.compile(r"\b(?:BAZI|ZIWEI|WEST|JYOTISH|NUM|HD|DREAM)-[A-Z0-9-]+\b")
+EXTRACTION_HINTS = {
+    "bazi": "four pillars, stems, branches, hidden stems, ten gods, five-element counts, strength/season labels, printed luck cycles",
+    "ziwei": "palace names and branches, stars in each palace, transformations, body/life palace, printed decade or annual layers",
+    "western": "planet and angle positions with sign/degree/house, house cusps, aspects with orb, chart method and house system",
+    "jyotish": "Lagna, graha sign/degree/house, nakshatra and pada, varga/chart layer, ayanamsha, explicit aspects, dasha periods",
+    "numerology": "exact input names and birth date, named calculation system, Life Path and other explicitly calculated number values",
+    "human_design": "Type, Strategy, Authority, Profile, Definition, Centers, Channels, Gates, Incarnation Cross, Variables",
+    "dreamspell": "Kin number, Galactic Tone, Solar Seal, wavespell or other explicitly printed Dreamspell labels",
+}
 
 
 def skill_instructions(system_id: str) -> str:
@@ -125,6 +134,10 @@ compatibility, health, career, advice, probabilities, or future events. Do not c
 repair a missing value, or infer a placement from birth data. Separate the source author's prose
 interpretations into source_commentary; those lines must never become chart facts.
 
+Relevant explicit fields for this chamber include: {EXTRACTION_HINTS[system_id]}.
+These are field hints, not permission to invent missing values. Preserve the report's own convention
+and chart-layer labels. Tables, compact data sheets, JSON, and tree diagrams are valid sources.
+
 Return JSON only:
 {{"facts":[{{"label":"short field name","value":"verbatim or minimally normalized value","source_span":"PAGE N: short exact supporting excerpt","confidence":0.0,"time_sensitive":true}}],"source_commentary":["short description of interpretive prose that was excluded"]}}
 Use at most 80 facts. A source_span is mandatory. If no explicit chart facts are present, return an empty facts list.
@@ -144,7 +157,7 @@ Do not reveal chain-of-thought."""
     try:
         body = await call_json(payload, api_key)
     except (HTTPError, URLError, TimeoutError, KeyError, TypeError, json.JSONDecodeError) as exc:
-        return [], [], f"DeepSeek 抽取未完成：{type(exc).__name__}。"
+        return [], [], f"DeepSeek 抽取未完成（{public_error_label(exc)}）；请稍后重试或重新上传。"
     facts: list[Fact] = []
     for index, item in enumerate(body.get("facts", [])[:80], start=1):
         label = bounded_input(item.get("label"), 120)
@@ -163,7 +176,8 @@ Do not reveal chain-of-thought."""
             )
         )
     commentary = [bounded_input(item, 400) for item in body.get("source_commentary", [])[:20]]
-    return facts, [item for item in commentary if item], None
+    warning = None if facts else "文件文字已读取，但 AI 没有识别到可确认的显式盘面事实；请重新上传或手动补充。"
+    return facts, [item for item in commentary if item], warning
 
 
 async def style_claims(
@@ -219,9 +233,9 @@ If safe framing is not possible, repeat the neutral statement exactly."""
 
 
 async def call_json(payload: dict, api_key: str) -> dict:
-    """Retry once because JSON mode can occasionally return empty content."""
+    """Retry transient provider failures and occasional empty JSON responses."""
     last_error: Exception | None = None
-    for _ in range(2):
+    for attempt in range(4):
         try:
             response = await asyncio.to_thread(post_json, payload, api_key)
             content = response["choices"][0]["message"]["content"]
@@ -230,6 +244,10 @@ async def call_json(payload: dict, api_key: str) -> dict:
             return json.loads(content)
         except (HTTPError, URLError, TimeoutError, KeyError, TypeError, json.JSONDecodeError) as exc:
             last_error = exc
+            if isinstance(exc, HTTPError) and exc.code not in {408, 409, 425, 429, 500, 502, 503, 504}:
+                break
+            if attempt < 3:
+                await asyncio.sleep(0.8 * (2**attempt))
     assert last_error is not None
     raise last_error
 
@@ -251,6 +269,16 @@ def clamp(value: object) -> float:
         return max(0.0, min(1.0, float(value)))
     except (TypeError, ValueError):
         return 0.0
+
+
+def public_error_label(exc: Exception) -> str:
+    if isinstance(exc, HTTPError):
+        return f"HTTP {exc.code}"
+    if isinstance(exc, json.JSONDecodeError):
+        return "返回格式异常"
+    if isinstance(exc, (URLError, TimeoutError)):
+        return "网络或超时"
+    return type(exc).__name__
 
 
 def post_json(payload: dict, api_key: str) -> dict:

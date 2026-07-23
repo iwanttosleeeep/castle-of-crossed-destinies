@@ -55,11 +55,13 @@ export default function App() {
       const create = await api('/api/cases', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({systems:selected, profile:{display_name:form.get('name'),birth_date:form.get('date'),birth_time:form.get('time')||null,birthplace_text:form.get('place'),timezone_name:form.get('timezone'),time_precision:form.get('precision')}})})
       setCaseToken(create.resume_token)
       const token = create.resume_token as string
-      setLoading('读取文件并抽取事实…')
-      const extractions = await Promise.all(selected.map(async id => {
+      const extractions:Extraction[] = []
+      for (let index=0; index<selected.length; index++) {
+        const id=selected[index]
+        setLoading(`读取并抽取 ${systemName(id)}（${index+1}/${selected.length}）…`)
         const body = new FormData(); body.append('file', files[id] as File)
-        return api(`/api/cases/${create.case_id}/sources/${id}`, {method:'POST', headers:{...providerHeaders(), 'X-Case-Token':token}, body})
-      }))
+        extractions.push(await api(`/api/cases/${create.case_id}/sources/${id}`, {method:'POST', headers:{...providerHeaders(), 'X-Case-Token':token}, body}))
+      }
       const next = {...create, extractions:Object.fromEntries(extractions.map((item:Extraction) => [item.system_id,item]))}
       setCaseData(next); setStage('review'); scrollTo('review')
     } catch (caught) { setError(messageOf(caught)) } finally { setLoading('') }
