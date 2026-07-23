@@ -32,6 +32,15 @@ npm run dev
 
 打开 `http://localhost:5173`。前端开发服务器会把 `/api` 代理到 FastAPI。
 
+## VPS / Docker
+
+仓库包含可直接部署的 `compose.yml`、`Caddyfile` 和两个 Dockerfile。API 镜像会把项目的 `skills/` 目录复制到 `/skills`，供 DeepSeek chamber runner 读取。
+
+```bash
+docker compose up -d --build
+curl http://127.0.0.1/api/health
+```
+
 ## 输入盘面事实
 
 在界面的「事实档案」中每行使用 `system | label | value`：
