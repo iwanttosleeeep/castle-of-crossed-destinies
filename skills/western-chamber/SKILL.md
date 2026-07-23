@@ -16,7 +16,7 @@ Read `references/knowledge.md` completely. Draft neutral synthesis before readin
    dignity labels.
 3. Keep planet=function, sign=manner, house=domain, aspect=relationship distinct.
 4. Prefer configurations with two or more linked facts. State competing factors.
-5. Produce at most five claims with evidence IDs, rule IDs, caveats, and
+5. Produce up to nine distinct-theme claims when supported, with evidence IDs, rule IDs, caveats, and
    counter-readings.
 6. Cap confidence for unknown house system, uncertain birth time, missing orb, or
    an undeclared traditional/modern framework.

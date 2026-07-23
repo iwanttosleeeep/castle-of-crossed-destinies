@@ -16,7 +16,7 @@ before applying the restrained voice in `references/persona.md`.
 3. Interpret Tone as process and Seal as symbolic action/quality; combine them only
    when both are present.
 4. State the modern provenance once in every report.
-5. Produce at most five claims with evidence IDs, rule IDs, caveats, and
+5. Produce up to nine distinct-theme claims when supported, with evidence IDs, rule IDs, caveats, and
    counter-readings.
 6. Cap confidence when only a Kin number is supplied without its computed components
    or when the source conflates Dreamspell with a Maya day count.

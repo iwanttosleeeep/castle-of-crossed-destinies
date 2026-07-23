@@ -5,6 +5,7 @@ from pathlib import Path
 
 from backend.app.deepseek import (
     RULE_PATTERN,
+    extract_facts_only,
     persona_instructions,
     run_chamber_skill,
     skill_instructions,
@@ -75,6 +76,26 @@ class SkillPackTests(unittest.TestCase):
 
 
 class ChamberRunnerTests(unittest.IsolatedAsyncioTestCase):
+    async def test_extractor_rejects_items_without_source_span(self):
+        mocked_call = AsyncMock(return_value={
+            "facts": [
+                {"label": "Sun", "value": "Aries", "source_span": "PAGE 1: Sun Aries", "confidence": 0.9},
+                {"label": "Personality", "value": "brave", "confidence": 0.8},
+            ],
+            "source_commentary": ["The report says the visitor is brave."],
+        })
+        with patch("backend.app.deepseek.call_json", mocked_call):
+            facts, commentary, warning = await extract_facts_only(
+                "western", "Sun: Aries", "chart.txt", "visitor-key", "deepseek-v4-flash"
+            )
+        self.assertIsNone(warning)
+        self.assertEqual(len(facts), 1)
+        self.assertEqual(facts[0].label, "Sun")
+        self.assertEqual(commentary, ["The report says the visitor is brave."])
+        extraction_prompt = mocked_call.await_args.args[0]["messages"][0]["content"]
+        self.assertIn("Do not interpret", extraction_prompt)
+        self.assertIn("untrusted data", extraction_prompt)
+
     async def test_request_scoped_key_and_model_are_forwarded_without_environment_storage(self):
         mocked_call = AsyncMock(return_value={"claims": []})
         with patch.dict("os.environ", {}, clear=True):

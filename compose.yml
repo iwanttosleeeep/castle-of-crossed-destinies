@@ -6,6 +6,10 @@ services:
     restart: unless-stopped
     env_file:
       - ./backend/.env
+    environment:
+      CASTLE_DB_PATH: /data/castle.db
+    volumes:
+      - castle_cases:/data
     expose:
       - "8000"
 
@@ -20,6 +24,8 @@ services:
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
+    environment:
+      CASTLE_DOMAIN: ${CASTLE_DOMAIN:-:80}
     ports:
       - "80:80"
       - "443:443"
@@ -32,5 +38,6 @@ services:
       - web
 
 volumes:
+  castle_cases:
   caddy_data:
   caddy_config:

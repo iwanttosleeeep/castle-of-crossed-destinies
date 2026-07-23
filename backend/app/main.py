@@ -1,53 +1,242 @@
 import asyncio
-from typing import Annotated
 from contextlib import asynccontextmanager
-from datetime import datetime
-from fastapi import FastAPI, Header, HTTPException
+from typing import Annotated
+
+from fastapi import FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from .deepseek import run_chamber_skill
-from .providers import SYSTEMS, generate_chamber, parse_facts
-from .schemas import Claim, ReportRequest, ReportResponse
+
+from .debate import run_debate
+from .deepseek import THEMES, extract_facts_only, run_chamber_skill
+from .files import extract_upload
+from .providers import SYSTEMS
+from .schemas import CaseCreateRequest, DebateRequest, Fact, FactConfirmation
+from .store import CaseStore
+from .tribunal import run_tribunal
+
+
+store: CaseStore | None = None
+case_write_lock = asyncio.Lock()
+ALLOWED_MODELS = {"deepseek-v4-flash", "deepseek-v4-pro"}
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    global store
+    store = CaseStore()
     yield
 
 
-app = FastAPI(title="The Castle of Crossed Destinies", version="0.1.0", lifespan=lifespan)
-app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173"], allow_methods=["*"], allow_headers=["*"])
+app = FastAPI(title="The Castle of Crossed Destinies", version="0.2.0", lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "engine": "local skills", "chambers": list(SYSTEMS)}
+    return {"status": "ok", "engine": "case workflow", "chambers": list(SYSTEMS)}
 
 
-@app.post("/reports", response_model=ReportResponse)
-async def create_report(
-    request: ReportRequest,
+@app.post("/cases")
+async def create_case(request: CaseCreateRequest):
+    selected = validate_systems(request.systems)
+    payload, token = get_store().create(request.profile.model_dump(mode="json"), selected)
+    return public_case(payload) | {"resume_token": token}
+
+
+@app.get("/cases/{case_id}")
+async def restore_case(
+    case_id: str,
+    case_token: Annotated[str | None, Header(alias="X-Case-Token")] = None,
+):
+    return public_case(authorize(case_id, case_token))
+
+
+@app.post("/cases/{case_id}/sources/{system_id}")
+async def upload_source(
+    case_id: str,
+    system_id: str,
+    file: Annotated[UploadFile, File()],
+    case_token: Annotated[str | None, Header(alias="X-Case-Token")] = None,
     deepseek_key: Annotated[str | None, Header(alias="X-DeepSeek-Key")] = None,
     deepseek_model: Annotated[str | None, Header(alias="X-DeepSeek-Model")] = None,
 ):
-    selected = list(dict.fromkeys(request.systems))
+    payload = authorize(case_id, case_token)
+    validate_model(deepseek_model)
+    if system_id not in payload["systems"]:
+        raise HTTPException(422, "该 chamber 不属于此案件")
+    source_text, file_warnings = await extract_upload(file)
+    if len(source_text) < 12:
+        raise HTTPException(422, "文件中没有足够的可识别文字")
+    facts, commentary, extraction_warning = await extract_facts_only(
+        system_id,
+        source_text,
+        file.filename or "uploaded report",
+        deepseek_key,
+        deepseek_model,
+    )
+    warnings = file_warnings + ([extraction_warning] if extraction_warning else [])
+    extraction = {
+        "system_id": system_id,
+        "display_name": SYSTEMS[system_id],
+        "filename": file.filename or "uploaded report",
+        "extracted_characters": len(source_text),
+        "facts": [fact.model_dump(mode="json") for fact in facts],
+        "source_commentary": commentary,
+        "warnings": warnings,
+        "confirmed": False,
+    }
+    async with case_write_lock:
+        payload = authorize(case_id, case_token)
+        payload["extractions"][system_id] = extraction
+        payload["confirmed_facts"].pop(system_id, None)
+        payload["reports"] = {}
+        payload["tribunal"] = None
+        payload["status"] = "awaiting_confirmation"
+        get_store().save(payload)
+    return extraction
+
+
+@app.put("/cases/{case_id}/facts/{system_id}")
+async def confirm_facts(
+    case_id: str,
+    system_id: str,
+    request: FactConfirmation,
+    case_token: Annotated[str | None, Header(alias="X-Case-Token")] = None,
+):
+    normalized: list[Fact] = []
+    seen = set()
+    for index, fact in enumerate(request.facts, start=1):
+        fact_id = fact.id if fact.id.startswith(f"{system_id}.") else f"{system_id}.confirmed-{index}"
+        if fact_id in seen:
+            fact_id = f"{system_id}.confirmed-{index}"
+        seen.add(fact_id)
+        normalized.append(fact.model_copy(update={"id": fact_id}))
+    async with case_write_lock:
+        payload = authorize(case_id, case_token)
+        if system_id not in payload["systems"]:
+            raise HTTPException(422, "该 chamber 不属于此案件")
+        payload["confirmed_facts"][system_id] = [fact.model_dump(mode="json") for fact in normalized]
+        if system_id in payload["extractions"]:
+            payload["extractions"][system_id]["confirmed"] = True
+            payload["extractions"][system_id]["facts"] = payload["confirmed_facts"][system_id]
+        payload["reports"] = {}
+        payload["tribunal"] = None
+        payload["status"] = "facts_confirmed" if all(system in payload["confirmed_facts"] for system in payload["systems"]) else "awaiting_confirmation"
+        get_store().save(payload)
+    return {"system_id": system_id, "facts": payload["confirmed_facts"][system_id], "status": payload["status"]}
+
+
+@app.post("/cases/{case_id}/reports")
+async def create_reports(
+    case_id: str,
+    case_token: Annotated[str | None, Header(alias="X-Case-Token")] = None,
+    deepseek_key: Annotated[str | None, Header(alias="X-DeepSeek-Key")] = None,
+    deepseek_model: Annotated[str | None, Header(alias="X-DeepSeek-Model")] = None,
+):
+    payload = authorize(case_id, case_token)
+    validate_model(deepseek_model)
+    missing = [system for system in payload["systems"] if system not in payload["confirmed_facts"]]
+    if missing:
+        raise HTTPException(409, f"请先确认这些 chamber 的事实：{', '.join(missing)}")
+    facts_by_system = {
+        system: [Fact.model_validate(item) for item in payload["confirmed_facts"][system]]
+        for system in payload["systems"]
+    }
+    facts_snapshot = payload["confirmed_facts"]
+    results = await asyncio.gather(
+        *(run_chamber_skill(system, facts_by_system[system], deepseek_key, deepseek_model) for system in payload["systems"])
+    )
+    reports = {}
+    all_claims = []
+    warnings = []
+    for system, (claims, warning) in zip(payload["systems"], results):
+        all_claims.extend(claims)
+        if warning:
+            warnings.append(f"{SYSTEMS[system]}: {warning}")
+        covered = {theme for claim in claims for theme in claim.themes}
+        reports[system] = {
+            "system_id": system,
+            "display_name": SYSTEMS[system],
+            "claims": [claim.model_dump(mode="json") for claim in claims],
+            "sections": {theme: [claim.id for claim in claims if theme in claim.themes] for theme in sorted(THEMES)},
+            "abstentions": [theme for theme in sorted(THEMES) if theme not in covered],
+            "warning": warning,
+        }
+    tribunal, tribunal_warning = await run_tribunal(all_claims, deepseek_key, deepseek_model)
+    if tribunal_warning:
+        warnings.append(tribunal_warning)
+    async with case_write_lock:
+        payload = authorize(case_id, case_token)
+        if payload["confirmed_facts"] != facts_snapshot:
+            raise HTTPException(409, "事实在报告生成期间发生了变化，请重新生成")
+        payload["reports"] = reports
+        payload["tribunal"] = tribunal
+        payload["status"] = "reports_ready"
+        payload["report_warnings"] = warnings
+        get_store().save(payload)
+    return public_case(payload)
+
+
+@app.post("/cases/{case_id}/debates")
+async def create_debate(
+    case_id: str,
+    request: DebateRequest,
+    case_token: Annotated[str | None, Header(alias="X-Case-Token")] = None,
+    deepseek_key: Annotated[str | None, Header(alias="X-DeepSeek-Key")] = None,
+    deepseek_model: Annotated[str | None, Header(alias="X-DeepSeek-Model")] = None,
+):
+    payload = authorize(case_id, case_token)
+    validate_model(deepseek_model)
+    if not payload.get("reports"):
+        raise HTTPException(409, "请先生成七份 general reports")
+    facts_by_system = {
+        system: [Fact.model_validate(item) for item in items]
+        for system, items in payload["confirmed_facts"].items()
+    }
+    hearing, warning = await run_debate(request.question, facts_by_system, deepseek_key, deepseek_model)
+    if warning or not hearing:
+        raise HTTPException(502, warning or "质询未完成")
+    async with case_write_lock:
+        payload = authorize(case_id, case_token)
+        hearing["id"] = f"hearing-{len(payload['debates']) + 1}"
+        payload["debates"].append(hearing)
+        payload["status"] = "hearing_complete"
+        get_store().save(payload)
+    return hearing
+
+
+def validate_systems(systems: list[str]) -> list[str]:
+    selected = list(dict.fromkeys(systems))
     invalid = set(selected) - SYSTEMS.keys()
     if invalid:
-        raise HTTPException(422, f"Unsupported systems: {', '.join(invalid)}")
-    allowed_models = {"deepseek-v4-flash", "deepseek-v4-pro"}
-    if deepseek_model and deepseek_model not in allowed_models:
+        raise HTTPException(422, f"Unsupported systems: {', '.join(sorted(invalid))}")
+    if not selected:
+        raise HTTPException(422, "请至少选择一个体系")
+    return selected
+
+
+def validate_model(model: str | None) -> None:
+    if model and model not in ALLOWED_MODELS:
         raise HTTPException(422, "Unsupported DeepSeek model")
-    supplied = parse_facts(request.facts_text)
-    chambers = [generate_chamber(system, request.profile, supplied[system]) for system in selected]
-    verified = {chamber.system_id for chamber in chambers if chamber.source_type == "user_dossier"}
-    results = await asyncio.gather(
-        *(
-            run_chamber_skill(system, supplied[system], deepseek_key, deepseek_model)
-            for system in selected
-            if system in verified
-        )
-    )
-    claims = [claim for chamber_claims, _ in results for claim in chamber_claims]
-    run_warnings = [warning for _, warning in results if warning]
-    sensitivity = "high" if request.profile.time_precision != "unknown" else "moderate"
-    status = "DeepSeek 已运行" if claims else (run_warnings[0] if run_warnings else "请先提供至少一个 chamber 的事实档案。")
-    return ReportResponse(case_id=f"CCD-{datetime.now():%y%m%d-%H%M}", mode="skills_ready", time_sensitivity=sensitivity, chambers=chambers, claims=claims, consensus=[{"theme": "awaiting tribunal", "score": 0, "support": ["Skill claims will be clustered after review"], "independence": "not yet assessed"}], conflicts=[{"topic": "No admissible conflict yet", "positions": "The Skills only receive their own chamber facts. Cross-examination starts after evidence-linked claims exist.", "severity": "pending"}], questions=[{"target": "All chambers", "type": "admissibility check", "question": "Which supplied fact supports this claim, and what would count against it?"}], audit={"barnum_risk": "not assessed", "traceability": "Only user-supplied facts are sent to the relevant chamber skill. " + status, "limitation": "Skills are interpretive tools, not evidence of prediction or scientific validity."})
+
+
+def authorize(case_id: str, token: str | None) -> dict:
+    payload = get_store().get(case_id, token or "")
+    if not payload:
+        raise HTTPException(404, "案件不存在或恢复令牌不正确")
+    return payload
+
+
+def public_case(payload: dict) -> dict:
+    return {key: value for key, value in payload.items() if key != "resume_token"}
+
+
+def get_store() -> CaseStore:
+    global store
+    if store is None:
+        store = CaseStore()
+    return store

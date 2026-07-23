@@ -16,7 +16,7 @@ loading the voice in `references/persona.md`.
    dignities, aspects, yogas, dashas, and transits.
 3. Distinguish natural signification from functional role in the supplied chart.
 4. Do not combine D1, D9, dashas, or transit facts without naming each layer.
-5. Produce at most five claims with evidence IDs, rule IDs, caveats, and
+5. Produce up to nine distinct-theme claims when supported, with evidence IDs, rule IDs, caveats, and
    counter-readings.
 6. Cap confidence when ayanāṃśa, varga, dasha system, or house/aspect convention is
    missing.

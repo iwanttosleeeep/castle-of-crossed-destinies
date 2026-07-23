@@ -17,7 +17,7 @@ only the final wording.
 3. Select only rules whose prerequisites are explicitly satisfied.
 4. Synthesize context before symbol: season and whole-chart support outrank raw
    element counts; a single Ten God never proves an event or personality.
-5. Produce at most five claims with evidence IDs, rule IDs, caveats, and
+5. Produce up to nine distinct-theme claims when supported, with evidence IDs, rule IDs, caveats, and
    counter-readings.
 6. Lower confidence for missing hour, unclear solar-time convention, undeclared
    school, or a time-cycle direction that the dossier does not document.

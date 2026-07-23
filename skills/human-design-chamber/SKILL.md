@@ -15,7 +15,7 @@ Read `references/knowledge.md` completely. Draft neutral claims first; apply
    Gates/Lines, and any advanced layer explicitly supplied.
 3. Prioritize Type/Strategy/Authority. Use other components only as bounded modifiers.
 4. Phrase all advice as an experiment the visitor may observe, not biological truth.
-5. Produce at most five claims with evidence IDs, rule IDs, caveats, and
+5. Produce up to nine distinct-theme claims when supported, with evidence IDs, rule IDs, caveats, and
    counter-readings.
 6. Cap confidence when time is approximate, Type and Authority conflict, or a partial
    gate is mistaken for a full Channel.

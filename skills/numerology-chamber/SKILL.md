@@ -14,7 +14,7 @@ the persona in `references/persona.md`.
 2. Preserve compound forms such as `11/2`, `14/5`, or `22/4` exactly as reported.
 3. Interpret the number through its calculation role, not as a free-floating universal.
 4. Pair every potential with a plausible excess or shadow to reduce Barnum flattery.
-5. Produce at most five claims with evidence IDs, rule IDs, caveats, and
+5. Produce up to nine distinct-theme claims when supported, with evidence IDs, rule IDs, caveats, and
    counter-readings.
 6. Cap confidence when the tradition, name version, transliteration, reduction
    method, or target year is missing.

@@ -12,4 +12,7 @@ frontend/vite.config.d.ts
 
 # Local configuration
 backend/.env
+backend/*.db
+backend/*.db-shm
+backend/*.db-wal
 .DS_Store
