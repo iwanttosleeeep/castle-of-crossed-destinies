@@ -99,6 +99,10 @@ GEMINI_API_KEY=你的密钥
 GEMINI_MODEL=gemini-3.6-flash
 ```
 
+Gemini 3.6 起不再接受 `temperature` 等旧采样参数，并更新了结构化输出字段；
+Castle 已使用兼容的 `responseFormat` 请求格式。
+首页也可切换到 `gemini-3.5-flash-lite`，用于更快的批量文档抽取。
+
 ## 配置 DeepSeek
 
 支持两种方式：

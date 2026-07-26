@@ -2,6 +2,7 @@ import asyncio
 import base64
 import json
 import os
+import re
 import secrets
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -11,7 +12,7 @@ from .schemas import Fact
 
 
 BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
-ALLOWED_MODELS = {"gemini-3.6-flash"}
+ALLOWED_MODELS = {"gemini-3.6-flash", "gemini-3.5-flash-lite"}
 MAX_INLINE_BYTES = 14 * 1024 * 1024
 FACT_SCHEMA = {
     "type": "object",
@@ -80,16 +81,19 @@ explicit fact is visibly supported. Source filename: {source_name}."""
     payload = {
         "contents": [{"role": "user", "parts": parts}],
         "generationConfig": {
-            "temperature": 0,
             "maxOutputTokens": 7000,
-            "responseMimeType": "application/json",
-            "responseJsonSchema": FACT_SCHEMA,
+            "responseFormat": {
+                "text": {
+                    "mimeType": "application/json",
+                    "schema": FACT_SCHEMA,
+                }
+            },
         },
     }
     try:
         body = await call_gemini_json(payload, api_key, model)
     except (HTTPError, URLError, TimeoutError, KeyError, TypeError, json.JSONDecodeError) as exc:
-        return [], [], f"Gemini 视觉抽取未完成（{public_error_label(exc)}）"
+        return [], [], f"Gemini 视觉抽取未完成（{gemini_error_label(exc)}）"
     facts: list[Fact] = []
     for index, item in enumerate(body.get("facts", [])[:80], start=1):
         label = bounded_input(item.get("label"), 120)
@@ -141,3 +145,21 @@ def post_gemini(payload: dict, api_key: str, model: str) -> dict:
     )
     with urlopen(request, timeout=120) as response:
         return json.loads(response.read().decode("utf-8"))
+
+
+def gemini_error_label(exc: Exception) -> str:
+    if not isinstance(exc, HTTPError):
+        return public_error_label(exc)
+    detail = ""
+    try:
+        body = json.loads(exc.read(16_384).decode("utf-8", errors="replace"))
+        error = body.get("error", {})
+        status = str(error.get("status", "")).strip()
+        message = str(error.get("message", "")).strip()
+        detail = ": ".join(item for item in (status, message) if item)
+    except (AttributeError, TypeError, ValueError, json.JSONDecodeError):
+        detail = ""
+    finally:
+        exc.close()
+    detail = re.sub(r"[\x00-\x1f\x7f]+", " ", detail)[:320]
+    return f"HTTP {exc.code}{': ' + detail if detail else ''}"

@@ -1,7 +1,10 @@
+import json
 import unittest
+from io import BytesIO
+from urllib.error import HTTPError
 from unittest.mock import AsyncMock, patch
 
-from backend.app.gemini import FACT_SCHEMA, MAX_INLINE_BYTES, extract_facts_with_gemini
+from backend.app.gemini import FACT_SCHEMA, MAX_INLINE_BYTES, extract_facts_with_gemini, gemini_error_label
 
 
 class GeminiExtractionTests(unittest.IsolatedAsyncioTestCase):
@@ -45,7 +48,10 @@ class GeminiExtractionTests(unittest.IsolatedAsyncioTestCase):
         inline = payload["contents"][0]["parts"][0]["inline_data"]
         self.assertEqual(inline["mime_type"], "image/png")
         self.assertNotIn("visitor-gemini-key", str(payload))
-        self.assertEqual(payload["generationConfig"]["responseJsonSchema"], FACT_SCHEMA)
+        self.assertEqual(payload["generationConfig"]["responseFormat"]["text"]["schema"], FACT_SCHEMA)
+        self.assertEqual(payload["generationConfig"]["responseFormat"]["text"]["mimeType"], "application/json")
+        self.assertNotIn("responseJsonSchema", payload["generationConfig"])
+        self.assertNotIn("temperature", payload["generationConfig"])
 
     async def test_text_input_does_not_become_an_inline_file(self):
         mocked_call = AsyncMock(return_value={"facts": [], "source_commentary": []})
@@ -77,6 +83,14 @@ class GeminiExtractionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(facts, [])
         self.assertIn("20 MB", warning)
         mocked_call.assert_not_awaited()
+
+    def test_google_error_body_is_exposed_without_credentials(self):
+        body = BytesIO(json.dumps({"error": {"code": 400, "status": "INVALID_ARGUMENT", "message": "Temperature is not supported."}}).encode())
+        error = HTTPError("https://example.invalid", 400, "Bad Request", {}, body)
+        self.assertEqual(
+            gemini_error_label(error),
+            "HTTP 400: INVALID_ARGUMENT: Temperature is not supported.",
+        )
 
 
 if __name__ == "__main__":
