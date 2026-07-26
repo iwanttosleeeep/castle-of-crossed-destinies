@@ -6,6 +6,7 @@
 
 - 每套体系分别上传 PDF、TXT/MD、PNG/JPG/WEBP/TIFF
 - 文本 PDF 直接读取；扫描 PDF 与图片使用 Tesseract OCR
+- Gemini 可直接视觉读取原始 PDF/图片；失败时回退到本地 OCR + DeepSeek 文本抽取
 - AI 第一阶段只抽取显式盘面事实，并隔离原报告中的解释性文字
 - 用户逐条修改、删除、补充和确认抽取事实
 - 七个项目内、版本可控的 Chamber Skills：`skills/*-chamber/`
@@ -75,8 +76,28 @@ docker compose cp api:/data/castle-backup.db ./castle-backup.db
 `references/persona.md` 改写语气。Tribunal 应始终使用 `neutral_statement`，
 而不是人物化后的 `statement`。
 
-上传限制为每份 15 MB、PDF 前 40 页。数据库会保存用户确认后的事实、证词、
+上传限制为每份 15 MB。本地 PDF 回退处理前 40 页；Gemini 视觉模式直接读取
+原始 PDF/图片。数据库会保存用户确认后的事实、证词、
 Tribunal 和辩论记录；不会保存原始 PDF/图片、完整 OCR 文本或 API Key。
+
+## Gemini 视觉抽取
+
+首页可分别填写两把 Key：Gemini 只负责看原始报告并抽取事实；DeepSeek 只读取
+用户确认后的事实，用于七份报告、Tribunal 和辩论。两把 Key 都只保存在当前
+页面内存，通过 HTTPS 请求转发，不进入数据库或日志。
+
+Gemini 免费层提交内容可能被 Google 用于改进产品并可能由人工审核。出生报告
+通常包含姓名、日期、时间和地点，因此界面会要求访客明确确认数据提示；正式
+公开部署建议使用 Gemini 付费层。即使服务器已经配置 Gemini Key，访客也必须
+主动勾选启用；未勾选时原文件绝不会发送给 Gemini，而是使用本地 OCR 与
+DeepSeek 文本抽取。
+
+自托管可在 `backend/.env` 配置：
+
+```env
+GEMINI_API_KEY=你的密钥
+GEMINI_MODEL=gemini-3.6-flash
+```
 
 ## 配置 DeepSeek
 

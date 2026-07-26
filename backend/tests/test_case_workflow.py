@@ -117,6 +117,65 @@ class WorkflowApiTests(unittest.IsolatedAsyncioTestCase):
         restored = await main.restore_case(created["case_id"], created["resume_token"])
         self.assertEqual(set(restored["extractions"]), {"bazi", "western"})
 
+    async def test_visitor_gemini_key_requires_explicit_data_consent(self):
+        created = await self.create_case()
+        with self.assertRaises(HTTPException) as denied:
+            await main.upload_source(
+                created["case_id"],
+                "bazi",
+                UploadFile(file=BytesIO(b"synthetic visual report"), filename="chart.png"),
+                created["resume_token"],
+                None,
+                None,
+                gemini_key="visitor-gemini-key",
+                gemini_model="gemini-3.6-flash",
+            )
+        self.assertEqual(denied.exception.status_code, 428)
+
+    async def test_gemini_visual_success_skips_local_ocr(self):
+        created = await self.create_case()
+        visual_fact = Fact(
+            id="bazi.gemini-1-demo",
+            label="Four Pillars",
+            value="甲申 丙子 庚申 壬午",
+            source_span="PAGE 1, center grid",
+            extraction_confidence=0.94,
+            time_sensitive=True,
+        )
+        with patch(
+            "backend.app.main.extract_facts_with_gemini",
+            new=AsyncMock(return_value=([visual_fact], [], None)),
+        ), patch("backend.app.main.extract_bytes", new=AsyncMock(side_effect=AssertionError("OCR should not run"))):
+            extraction = await main.upload_source(
+                created["case_id"],
+                "bazi",
+                UploadFile(file=BytesIO(b"synthetic visual report"), filename="chart.png"),
+                created["resume_token"],
+                None,
+                None,
+                gemini_key="visitor-gemini-key",
+                gemini_model="gemini-3.6-flash",
+                gemini_consent="acknowledged",
+                gemini_enabled="true",
+            )
+        self.assertEqual(extraction["extraction_engine"], "gemini_vision")
+        self.assertEqual(extraction["facts"][0]["label"], "Four Pillars")
+
+    async def test_server_gemini_key_is_not_used_without_visitor_opt_in(self):
+        created = await self.create_case()
+        gemini_call = AsyncMock()
+        with patch.dict(os.environ, {"GEMINI_API_KEY": "server-key"}), patch(
+            "backend.app.main.extract_facts_with_gemini", gemini_call
+        ):
+            extraction = await main.upload_source(
+                created["case_id"],
+                "bazi",
+                UploadFile(file=BytesIO(b"Day Master: Jia Wood explicit chart fact"), filename="chart.txt"),
+                created["resume_token"],
+            )
+        gemini_call.assert_not_awaited()
+        self.assertNotEqual(extraction["extraction_engine"], "gemini_text")
+
 
 class TribunalScoreTests(unittest.TestCase):
     def test_agreement_score_penalizes_barnum_risk(self):

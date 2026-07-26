@@ -1,7 +1,7 @@
 import { FormEvent, useMemo, useState } from 'react'
 
 type Fact = { id:string; label:string; value:string; time_sensitive:boolean; source_span?:string|null; extraction_confidence?:number|null }
-type Extraction = { system_id:string; display_name:string; filename:string; extracted_characters:number; facts:Fact[]; source_commentary:string[]; warnings:string[]; confirmed:boolean }
+type Extraction = { system_id:string; display_name:string; filename:string; extracted_characters:number; source_bytes?:number; extraction_engine?:string; facts:Fact[]; source_commentary:string[]; warnings:string[]; confirmed:boolean }
 type Claim = { id:string; system_id:string; neutral_statement:string; statement:string; themes:string[]; evidence_ids:string[]; rule_ids:string[]; caveat:string; counter_reading:string; confidence:number; specificity:number; barnum_risk:number }
 type ChamberReport = { system_id:string; display_name:string; claims:Claim[]; sections:Record<string,string[]>; abstentions:string[]; warning?:string|null }
 type Finding = { id:string; title:string; type:string; theme:string; claim_ids:string[]; systems:string[]; agreement_strength?:number|null; explanation:string; open_question:string }
@@ -30,6 +30,8 @@ export default function App() {
   const [files, setFiles] = useState<Record<string,File|null>>({})
   const [apiKey, setApiKey] = useState('')
   const [model, setModel] = useState('deepseek-v4-flash')
+  const [geminiKey, setGeminiKey] = useState('')
+  const [geminiConsent, setGeminiConsent] = useState(false)
   const [caseData, setCaseData] = useState<CaseData|null>(null)
   const [caseToken, setCaseToken] = useState('')
   const [restoreId, setRestoreId] = useState('')
@@ -38,8 +40,15 @@ export default function App() {
   const [error, setError] = useState('')
 
   const providerHeaders = () => {
-    const headers:Record<string,string> = {'X-DeepSeek-Model':model}
+    const headers:Record<string,string> = {'X-DeepSeek-Model':model,'X-Gemini-Model':'gemini-3.6-flash'}
     if (apiKey) headers['X-DeepSeek-Key'] = apiKey
+    if (geminiKey) {
+      headers['X-Gemini-Key'] = geminiKey
+    }
+    if (geminiConsent) {
+      headers['X-Gemini-Enabled'] = 'true'
+      headers['X-Gemini-Data-Consent'] = 'acknowledged'
+    }
     if (caseToken) headers['X-Case-Token'] = caseToken
     return headers
   }
@@ -48,7 +57,8 @@ export default function App() {
     event.preventDefault(); setError('')
     const missing = selected.filter(id => !files[id])
     if (missing.length) return setError(`请为每个已开启的体系上传报告：${missing.map(systemName).join('、')}`)
-    if (apiKey && !window.isSecureContext && !['localhost','127.0.0.1'].includes(window.location.hostname)) return setError('为保护 API Key，请先为网站配置 HTTPS。')
+    if ((apiKey||geminiKey) && !window.isSecureContext && !['localhost','127.0.0.1'].includes(window.location.hostname)) return setError('为保护 API Key，请先为网站配置 HTTPS。')
+    if (geminiKey&&!geminiConsent) return setError('使用 Gemini 读取个人报告前，请确认免费层数据使用提示。')
     setLoading('正在建立案件…')
     const form = new FormData(event.currentTarget)
     try {
@@ -110,7 +120,8 @@ export default function App() {
 
     <section className="entry" id="entry"><div><p className="eyebrow">I. OPEN A CASE</p><h2>Bring your seven dossiers.</h2><p>每个体系分别上传 PDF、TXT 或图片。上传阶段只做文字识别与事实抽取，不生成性格、命运或建议。</p><RestoreForm id={restoreId} token={restoreToken} setId={setRestoreId} setToken={setRestoreToken} submit={restoreCase}/></div>
       <form onSubmit={startCase}><label>姓名或昵称<input name="name" required placeholder="The visitor"/></label><div className="twocol"><label>出生日期<input name="date" type="date" required/></label><label>出生时间<input name="time" type="time"/></label></div><label>出生地点<input name="place" required placeholder="Shanghai, China"/></label><div className="twocol"><label>IANA 时区<input name="timezone" required defaultValue="Asia/Shanghai"/></label><label>时间精度<select name="precision" defaultValue="exact"><option value="exact">精确</option><option value="approximate">约略</option><option value="unknown">未知</option></select></label></div>
-        <div className="key-panel"><label>DeepSeek API Key<input type="password" autoComplete="off" value={apiKey} onChange={e=>setApiKey(e.target.value)} placeholder="sk-...（只在页面内存）"/></label><label>模型<select value={model} onChange={e=>setModel(e.target.value)}><option value="deepseek-v4-flash">V4 Flash</option><option value="deepseek-v4-pro">V4 Pro</option></select></label><p>Key 经 HTTPS 转发给 DeepSeek，不写入浏览器存储、数据库或日志。若服务器已配置 Key，此处可留空。</p></div>
+        <div className="key-panel"><label>DeepSeek API Key · 分析与辩论<input type="password" autoComplete="off" value={apiKey} onChange={e=>setApiKey(e.target.value)} placeholder="sk-...（只在页面内存）"/></label><label>模型<select value={model} onChange={e=>setModel(e.target.value)}><option value="deepseek-v4-flash">V4 Flash</option><option value="deepseek-v4-pro">V4 Pro</option></select></label><p>DeepSeek 只读取用户确认后的事实，不接收原始报告。服务器已配置 Key 时可留空。</p></div>
+        <div className="key-panel gemini-panel"><label>Gemini API Key · PDF / 图片识别<input type="password" autoComplete="off" value={geminiKey} onChange={e=>setGeminiKey(e.target.value)} placeholder="AIza...（可选，只在页面内存）"/></label><label>视觉模型<select disabled value="gemini-3.6-flash"><option>Gemini 3.6 Flash</option></select></label><p>显式启用后，原始 PDF/图片会经 HTTPS 临时发送给 Gemini 进行视觉事实抽取；不写入 Castle 数据库。留空则可使用服务器 Key；不勾选则完全不向 Gemini 发送文件。</p><label className="privacy-consent"><input type="checkbox" checked={geminiConsent} onChange={e=>setGeminiConsent(e.target.checked)}/><span>启用 Gemini。我理解免费层内容可能用于改进 Google 产品并可能由人工审核；报告含姓名、出生时间等个人信息。正式使用建议选择付费层。</span></label><a href="https://ai.google.dev/gemini-api/terms" target="_blank" rel="noreferrer">查看 Gemini API 数据条款 ↗</a></div>
         <fieldset><legend>Open chambers & attach reports</legend><div className="systems upload-systems">{systems.map(([id,title,detail]) => <div className={selected.includes(id)?'system upload active':'system upload'} key={id}><button type="button" onClick={()=>setSelected(v=>v.includes(id)?v.filter(x=>x!==id):[...v,id])}><b>{title}</b><small>{detail}</small><i>{selected.includes(id)?'✓':'+'}</i></button>{selected.includes(id)&&<label className="file"><input type="file" accept=".pdf,.txt,.md,.png,.jpg,.jpeg,.webp,.tif,.tiff" onChange={e=>setFiles({...files,[id]:e.target.files?.[0]||null})}/><span>{files[id]?.name || '选择 PDF / TXT / 图片'}</span></label>}</div>)}</div></fieldset>
         {error&&<p className="error">{error}</p>}<button className="enter" disabled={!!loading||!selected.length}>{loading||'CREATE CASE & EXTRACT FACTS'}</button>
       </form>
@@ -119,7 +130,7 @@ export default function App() {
     {caseData && <CasePassport data={caseData} token={caseToken}/>}
     {stage==='review' && caseData && <Review data={caseData} updateFacts={updateFacts} upload={uploadToExisting} submit={confirmAndGenerate} loading={loading} error={error}/>}
     {stage==='report' && caseData && <ReportView data={caseData} token={caseToken} providerHeaders={providerHeaders} setData={setCaseData} apiKey={apiKey} setApiKey={setApiKey} loading={loading} setLoading={setLoading} error={error} setError={setError}/>}
-    <section className="method" id="method"><p className="eyebrow">THE METHOD</p><h2>Facts first. Voices second.</h2><p>原始报告只进入抽取步骤；七间 chamber 只看你确认后的事实。角色口吻在独立的第二遍添加，Tribunal 和最终主持人永远只读取中性证词。</p></section><footer>THE CASTLE OF CROSSED DESTINIES <span>Symbolic interpretation—not proof, diagnosis, or professional advice.</span></footer>
+    <section className="method" id="method"><p className="eyebrow">THE METHOD</p><h2>Gemini sees. DeepSeek testifies.</h2><p>Gemini 只负责从原始报告中抽取事实；七间 chamber 只看你确认后的事实。角色口吻在独立的第二遍添加，Tribunal 和最终主持人永远只读取中性证词。</p></section><footer>THE CASTLE OF CROSSED DESTINIES <span>Symbolic interpretation—not proof, diagnosis, or professional advice.</span></footer>
   </main>
 }
 
@@ -129,7 +140,7 @@ function CasePassport({data,token}:{data:CaseData;token:string}) { const [copied
 
 function Review({data,updateFacts,upload,submit,loading,error}:{data:CaseData;updateFacts:(id:string,facts:Fact[])=>void;upload:(id:string,file:File)=>void;submit:()=>void;loading:string;error:string}) { return <section className="review" id="review"><header><p className="eyebrow">II. USER CONFIRMATION</p><h2>Check every extracted fact.</h2><p>这一步决定后续所有证词的证据边界。修正 OCR 错字，删除“你很敏感”一类解释文字；需要时可手动补充报告中明确写出的事实。</p></header><div className="review-grid">{data.systems.map(id=>data.extractions[id]?<FactEditor key={id} extraction={data.extractions[id]} onChange={facts=>updateFacts(id,facts)} onUpload={file=>upload(id,file)}/>:<MissingUpload key={id} systemId={id} onUpload={file=>upload(id,file)}/>)}</div>{error&&<p className="error centered">{error}</p>}<button className="enter assemble" onClick={submit} disabled={!!loading}>{loading||'USER CONFIRMED · ASSEMBLE SEVEN REPORTS'}</button></section> }
 
-function FactEditor({extraction,onChange,onUpload}:{extraction:Extraction;onChange:(facts:Fact[])=>void;onUpload:(file:File)=>void}) { const add=()=>onChange([...extraction.facts,{id:`${extraction.system_id}.manual-${Date.now()}`,label:'',value:'',time_sensitive:!['numerology','dreamspell'].includes(extraction.system_id),source_span:'用户根据原报告手动补充',extraction_confidence:1}]); return <article className="fact-editor"><div className="editor-head"><div><p>{extraction.display_name}</p><small>{extraction.filename} · {extraction.extracted_characters.toLocaleString()} characters</small></div><span>{extraction.facts.length} FACTS</span></div><label className="replace-file">重新上传<input type="file" accept=".pdf,.txt,.md,.png,.jpg,.jpeg,.webp,.tif,.tiff" onChange={e=>e.target.files?.[0]&&onUpload(e.target.files[0])}/></label>{extraction.warnings.map(item=><p className="warning" key={item}>{item}</p>)}{extraction.facts.map((fact,index)=><div className="fact-row" key={fact.id}><input aria-label="事实名称" value={fact.label} onChange={e=>onChange(extraction.facts.map((x,i)=>i===index?{...x,label:e.target.value}:x))}/><textarea aria-label="事实内容" value={fact.value} onChange={e=>onChange(extraction.facts.map((x,i)=>i===index?{...x,value:e.target.value}:x))}/><button title="删除" onClick={()=>onChange(extraction.facts.filter((_,i)=>i!==index))}>×</button>{fact.source_span&&<small>{fact.source_span}</small>}</div>)}<button className="add-fact" onClick={add}>+ ADD EXPLICIT FACT</button>{extraction.source_commentary.length>0&&<details><summary>已排除的原报告解释（{extraction.source_commentary.length}）</summary>{extraction.source_commentary.map(item=><p key={item}>{item}</p>)}</details>}</article> }
+function FactEditor({extraction,onChange,onUpload}:{extraction:Extraction;onChange:(facts:Fact[])=>void;onUpload:(file:File)=>void}) { const add=()=>onChange([...extraction.facts,{id:`${extraction.system_id}.manual-${Date.now()}`,label:'',value:'',time_sensitive:!['numerology','dreamspell'].includes(extraction.system_id),source_span:'用户根据原报告手动补充',extraction_confidence:1}]); return <article className="fact-editor"><div className="editor-head"><div><p>{extraction.display_name}</p><small>{extraction.filename} · {engineName(extraction.extraction_engine)} · {formatSize(extraction.source_bytes||0)}</small></div><span>{extraction.facts.length} FACTS</span></div><label className="replace-file">重新上传<input type="file" accept=".pdf,.txt,.md,.png,.jpg,.jpeg,.webp,.tif,.tiff" onChange={e=>e.target.files?.[0]&&onUpload(e.target.files[0])}/></label>{extraction.warnings.map(item=><p className="warning" key={item}>{item}</p>)}{extraction.facts.map((fact,index)=><div className="fact-row" key={fact.id}><input aria-label="事实名称" value={fact.label} onChange={e=>onChange(extraction.facts.map((x,i)=>i===index?{...x,label:e.target.value}:x))}/><textarea aria-label="事实内容" value={fact.value} onChange={e=>onChange(extraction.facts.map((x,i)=>i===index?{...x,value:e.target.value}:x))}/><button title="删除" onClick={()=>onChange(extraction.facts.filter((_,i)=>i!==index))}>×</button>{fact.source_span&&<small>{fact.source_span}</small>}</div>)}<button className="add-fact" onClick={add}>+ ADD EXPLICIT FACT</button>{extraction.source_commentary.length>0&&<details><summary>已排除的原报告解释（{extraction.source_commentary.length}）</summary>{extraction.source_commentary.map(item=><p key={item}>{item}</p>)}</details>}</article> }
 function MissingUpload({systemId,onUpload}:{systemId:string;onUpload:(file:File)=>void}) { return <article className="fact-editor missing-upload"><p>{systemName(systemId)}</p><small>这份报告尚未上传，或上次上传在网络中断前没有完成。</small><label>继续上传 PDF / TXT / 图片<input type="file" accept=".pdf,.txt,.md,.png,.jpg,.jpeg,.webp,.tif,.tiff" onChange={e=>e.target.files?.[0]&&onUpload(e.target.files[0])}/></label></article> }
 
 function ReportView({data,providerHeaders,setData,apiKey,setApiKey,loading,setLoading,error,setError}:{data:CaseData;token:string;providerHeaders:()=>Record<string,string>;setData:(d:CaseData)=>void;apiKey:string;setApiKey:(v:string)=>void;loading:string;setLoading:(v:string)=>void;error:string;setError:(v:string)=>void}) {
@@ -151,6 +162,8 @@ function HearingView({hearing,latest}:{hearing:Hearing;latest:boolean}) { return
 function SummaryList({title,items}:{title:string;items:string[]}) { return items?.length?<div><b>{title}</b><ul>{items.map(item=><li key={item}>{item}</li>)}</ul></div>:null }
 
 function systemName(id:string) { return systems.find(([system])=>system===id)?.[1] || id.replaceAll('_',' ') }
+function engineName(engine?:string) { return ({gemini_vision:'Gemini Vision',gemini_text:'Gemini Text',deepseek_text:'Local text + DeepSeek',manual_required:'Manual review'} as Record<string,string>)[engine||'']||'Legacy extraction' }
+function formatSize(bytes:number) { return bytes?`${Math.max(1,Math.round(bytes/1024)).toLocaleString()} KB`:'size unavailable' }
 function scrollTo(id:string) { setTimeout(()=>document.querySelector(`#${id}`)?.scrollIntoView({behavior:'smooth'}),80) }
 async function api(url:string,init?:RequestInit) { const response=await fetch(url,init); const body=await response.json().catch(()=>({})); if(!response.ok) throw new Error(body.detail||`HTTP ${response.status}`); return body }
 function messageOf(caught:unknown) { return caught instanceof Error?caught.message:'无法连接到后端，请检查 FastAPI、反向代理或服务器日志。' }

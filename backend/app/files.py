@@ -12,14 +12,38 @@ MAX_BYTES = 15 * 1024 * 1024
 MAX_PAGES = 40
 TEXT_TYPES = {".txt", ".md", ".csv", ".json"}
 IMAGE_TYPES = {".png", ".jpg", ".jpeg", ".webp", ".tif", ".tiff"}
+MIME_TYPES = {
+    ".pdf": "application/pdf",
+    ".txt": "text/plain",
+    ".md": "text/markdown",
+    ".csv": "text/csv",
+    ".json": "application/json",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".webp": "image/webp",
+    ".tif": "image/tiff",
+    ".tiff": "image/tiff",
+}
 
 
 async def extract_upload(file: UploadFile) -> tuple[str, list[str]]:
+    data, suffix, _ = await read_upload(file)
+    return await extract_bytes(data, suffix)
+
+
+async def read_upload(file: UploadFile) -> tuple[bytes, str, str]:
     data = await file.read(MAX_BYTES + 1)
     await file.close()
     if len(data) > MAX_BYTES:
         raise HTTPException(413, "文件不得超过 15 MB")
     suffix = Path(file.filename or "upload").suffix.lower()
+    if suffix not in MIME_TYPES:
+        raise HTTPException(415, "仅支持 PDF、TXT/MD、PNG、JPG、WEBP 或 TIFF")
+    return data, suffix, MIME_TYPES[suffix]
+
+
+async def extract_bytes(data: bytes, suffix: str) -> tuple[str, list[str]]:
     if suffix in TEXT_TYPES:
         text = decode_text(data)
         return clean_text(text), []
