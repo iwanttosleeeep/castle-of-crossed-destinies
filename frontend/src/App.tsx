@@ -38,6 +38,7 @@ export default function App() {
   const [restoreToken, setRestoreToken] = useState('')
   const [loading, setLoading] = useState('')
   const [error, setError] = useState('')
+  const insecureRemote = !window.isSecureContext && !['localhost','127.0.0.1'].includes(window.location.hostname)
 
   const providerHeaders = () => {
     const headers:Record<string,string> = {'X-DeepSeek-Model':model,'X-Gemini-Model':'gemini-3.6-flash'}
@@ -57,12 +58,11 @@ export default function App() {
     event.preventDefault(); setError('')
     const missing = selected.filter(id => !files[id])
     if (missing.length) return setError(`请为每个已开启的体系上传报告：${missing.map(systemName).join('、')}`)
-    if ((apiKey||geminiKey) && !window.isSecureContext && !['localhost','127.0.0.1'].includes(window.location.hostname)) return setError('为保护 API Key，请先为网站配置 HTTPS。')
     if (geminiKey&&!geminiConsent) return setError('使用 Gemini 读取个人报告前，请确认免费层数据使用提示。')
     setLoading('正在建立案件…')
     const form = new FormData(event.currentTarget)
     try {
-      const create = await api('/api/cases', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({systems:selected, profile:{display_name:form.get('name'),birth_date:form.get('date'),birth_time:form.get('time')||null,birthplace_text:form.get('place'),timezone_name:form.get('timezone'),time_precision:form.get('precision')}})})
+      const create = await api('/api/cases', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({systems:selected, profile:{display_name:optionalFormValue(form,'name'),birth_date:optionalFormValue(form,'date'),birth_time:optionalFormValue(form,'time'),birthplace_text:optionalFormValue(form,'place'),timezone_name:optionalFormValue(form,'timezone'),time_precision:form.get('precision')||'unknown'}})})
       setCaseToken(create.resume_token)
       const token = create.resume_token as string
       const extractions:Extraction[] = []
@@ -119,9 +119,9 @@ export default function App() {
     <section className="hero"><p className="eyebrow">SEVEN SEALED CHAMBERS · ONE TRIBUNAL</p><h1><em>THE CASTLE OF<br/>CROSSED DESTINIES</em></h1><p className="lede">上传你已有的七套报告。城堡先只抽取盘面事实，等你逐项确认；七间密室彼此隔离作证，最后才在宴会厅相互质询。</p><div className="rule"/><p className="note">Files are transient · API keys are never stored · Every claim must cite evidence</p><div className="castle-card"><img src="/castle-card.jpg" alt="The Castle of Crossed Destinies card"/></div></section>
 
     <section className="entry" id="entry"><div><p className="eyebrow">I. OPEN A CASE</p><h2>Bring your seven dossiers.</h2><p>每个体系分别上传 PDF、TXT 或图片。上传阶段只做文字识别与事实抽取，不生成性格、命运或建议。</p><RestoreForm id={restoreId} token={restoreToken} setId={setRestoreId} setToken={setRestoreToken} submit={restoreCase}/></div>
-      <form onSubmit={startCase}><label>姓名或昵称<input name="name" required placeholder="The visitor"/></label><div className="twocol"><label>出生日期<input name="date" type="date" required/></label><label>出生时间<input name="time" type="time"/></label></div><label>出生地点<input name="place" required placeholder="Shanghai, China"/></label><div className="twocol"><label>IANA 时区<input name="timezone" required defaultValue="Asia/Shanghai"/></label><label>时间精度<select name="precision" defaultValue="exact"><option value="exact">精确</option><option value="approximate">约略</option><option value="unknown">未知</option></select></label></div>
+      <form onSubmit={startCase}><p className="optional-profile-note">基础资料均为可选项。报告里已有的信息不必重复填写；留空不会影响文件抽取。</p><label>姓名或昵称 <small>可选</small><input name="name" placeholder="可留空"/></label><div className="twocol"><label>出生日期 <small>可选</small><input name="date" type="date"/></label><label>出生时间 <small>可选</small><input name="time" type="time"/></label></div><label>出生地点 <small>可选</small><input name="place" placeholder="可留空"/></label><div className="twocol"><label>IANA 时区 <small>可选</small><input name="timezone" placeholder="例如 Asia/Shanghai；可留空"/></label><label>时间精度 <small>可选</small><select name="precision" defaultValue="unknown"><option value="unknown">未知 / 未填写</option><option value="exact">精确</option><option value="approximate">约略</option></select></label></div>
         <div className="key-panel"><label>DeepSeek API Key · 分析与辩论<input type="password" autoComplete="off" value={apiKey} onChange={e=>setApiKey(e.target.value)} placeholder="sk-...（只在页面内存）"/></label><label>模型<select value={model} onChange={e=>setModel(e.target.value)}><option value="deepseek-v4-flash">V4 Flash</option><option value="deepseek-v4-pro">V4 Pro</option></select></label><p>DeepSeek 只读取用户确认后的事实，不接收原始报告。服务器已配置 Key 时可留空。</p></div>
-        <div className="key-panel gemini-panel"><label>Gemini API Key · PDF / 图片识别<input type="password" autoComplete="off" value={geminiKey} onChange={e=>setGeminiKey(e.target.value)} placeholder="AIza...（可选，只在页面内存）"/></label><label>视觉模型<select disabled value="gemini-3.6-flash"><option>Gemini 3.6 Flash</option></select></label><p>显式启用后，原始 PDF/图片会经 HTTPS 临时发送给 Gemini 进行视觉事实抽取；不写入 Castle 数据库。留空则可使用服务器 Key；不勾选则完全不向 Gemini 发送文件。</p><label className="privacy-consent"><input type="checkbox" checked={geminiConsent} onChange={e=>setGeminiConsent(e.target.checked)}/><span>启用 Gemini。我理解免费层内容可能用于改进 Google 产品并可能由人工审核；报告含姓名、出生时间等个人信息。正式使用建议选择付费层。</span></label><a href="https://ai.google.dev/gemini-api/terms" target="_blank" rel="noreferrer">查看 Gemini API 数据条款 ↗</a></div>
+        <div className="key-panel gemini-panel"><label>Gemini API Key · PDF / 图片识别<input type="password" autoComplete="off" value={geminiKey} onChange={e=>setGeminiKey(e.target.value)} placeholder="在这里粘贴 AIza...（只在页面内存）"/></label><label>视觉模型<select disabled value="gemini-3.6-flash"><option>Gemini 3.6 Flash</option></select></label>{insecureRemote&&<p className="http-key-warning">⚠ 当前页面使用 HTTP。为了方便你测试，Castle 仍允许填写并发送 Key，但它在到达服务器前不受 HTTPS 加密保护。请只短暂使用测试 Key，并尽快配置 HTTPS。</p>}<p>显式启用后，原始 PDF/图片会临时发送给 Gemini 进行视觉事实抽取；不写入 Castle 数据库。留空则可使用服务器 Key；不勾选则完全不向 Gemini 发送文件。Key 可在 HTTP 测试环境使用，但只有 HTTPS 能保护传输过程。</p><label className="privacy-consent"><input type="checkbox" checked={geminiConsent} onChange={e=>setGeminiConsent(e.target.checked)}/><span>启用 Gemini。我理解免费层内容可能用于改进 Google 产品并可能由人工审核；报告可能含姓名、出生时间等个人信息。正式使用建议选择付费层。</span></label><a href="https://ai.google.dev/gemini-api/terms" target="_blank" rel="noreferrer">查看 Gemini API 数据条款 ↗</a></div>
         <fieldset><legend>Open chambers & attach reports</legend><div className="systems upload-systems">{systems.map(([id,title,detail]) => <div className={selected.includes(id)?'system upload active':'system upload'} key={id}><button type="button" onClick={()=>setSelected(v=>v.includes(id)?v.filter(x=>x!==id):[...v,id])}><b>{title}</b><small>{detail}</small><i>{selected.includes(id)?'✓':'+'}</i></button>{selected.includes(id)&&<label className="file"><input type="file" accept=".pdf,.txt,.md,.png,.jpg,.jpeg,.webp,.tif,.tiff" onChange={e=>setFiles({...files,[id]:e.target.files?.[0]||null})}/><span>{files[id]?.name || '选择 PDF / TXT / 图片'}</span></label>}</div>)}</div></fieldset>
         {error&&<p className="error">{error}</p>}<button className="enter" disabled={!!loading||!selected.length}>{loading||'CREATE CASE & EXTRACT FACTS'}</button>
       </form>
@@ -164,6 +164,7 @@ function SummaryList({title,items}:{title:string;items:string[]}) { return items
 function systemName(id:string) { return systems.find(([system])=>system===id)?.[1] || id.replaceAll('_',' ') }
 function engineName(engine?:string) { return ({gemini_vision:'Gemini Vision',gemini_text:'Gemini Text',deepseek_text:'Local text + DeepSeek',manual_required:'Manual review'} as Record<string,string>)[engine||'']||'Legacy extraction' }
 function formatSize(bytes:number) { return bytes?`${Math.max(1,Math.round(bytes/1024)).toLocaleString()} KB`:'size unavailable' }
+function optionalFormValue(form:FormData,name:string) { const value=String(form.get(name)||'').trim(); return value||null }
 function scrollTo(id:string) { setTimeout(()=>document.querySelector(`#${id}`)?.scrollIntoView({behavior:'smooth'}),80) }
 async function api(url:string,init?:RequestInit) { const response=await fetch(url,init); const body=await response.json().catch(()=>({})); if(!response.ok) throw new Error(body.detail||`HTTP ${response.status}`); return body }
 function messageOf(caught:unknown) { return caught instanceof Error?caught.message:'无法连接到后端，请检查 FastAPI、反向代理或服务器日志。' }

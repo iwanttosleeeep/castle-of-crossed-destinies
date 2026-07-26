@@ -62,6 +62,23 @@ class WorkflowApiTests(unittest.IsolatedAsyncioTestCase):
             await main.restore_case(created["case_id"], "wrong")
         self.assertEqual(denied.exception.status_code, 404)
 
+    async def test_case_profile_fields_are_all_optional(self):
+        created = await main.create_case(
+            CaseCreateRequest(profile=BirthProfile(), systems=["bazi"])
+        )
+        self.assertEqual(
+            created["profile"],
+            {
+                "display_name": None,
+                "birth_date": None,
+                "birth_time": None,
+                "birthplace_text": None,
+                "timezone_name": None,
+                "time_precision": "unknown",
+                "gender_marker": None,
+            },
+        )
+
     async def test_text_upload_only_saves_extracted_facts_not_raw_file(self):
         created = await self.create_case()
         extracted = [

@@ -4,12 +4,12 @@ from pydantic import BaseModel, Field
 
 
 class BirthProfile(BaseModel):
-    display_name: str = Field(min_length=1, max_length=80)
-    birth_date: date
+    display_name: str | None = Field(default=None, max_length=80)
+    birth_date: date | None = None
     birth_time: time | None = None
-    birthplace_text: str = Field(min_length=2, max_length=160)
-    timezone_name: str = "Asia/Shanghai"
-    time_precision: Literal["exact", "approximate", "unknown"] = "exact"
+    birthplace_text: str | None = Field(default=None, max_length=160)
+    timezone_name: str | None = Field(default=None, max_length=80)
+    time_precision: Literal["exact", "approximate", "unknown"] = "unknown"
     gender_marker: str | None = None
 
 
