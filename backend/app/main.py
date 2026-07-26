@@ -1,5 +1,4 @@
 import asyncio
-import os
 from contextlib import asynccontextmanager
 from typing import Annotated
 
@@ -8,8 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .debate import run_debate
 from .deepseek import THEMES, extract_facts_only, run_chamber_skill
-from .files import TEXT_TYPES, extract_bytes, read_upload
-from .gemini import ALLOWED_MODELS as ALLOWED_GEMINI_MODELS, extract_facts_with_gemini
+from .files import extract_bytes, read_upload
 from .providers import SYSTEMS
 from .schemas import CaseCreateRequest, DebateRequest, Fact, FactConfirmation
 from .store import CaseStore
@@ -39,7 +37,7 @@ app.add_middleware(
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "engine": "hybrid vision + local skills", "chambers": list(SYSTEMS)}
+    return {"status": "ok", "engine": "local text extraction + DeepSeek skills", "chambers": list(SYSTEMS)}
 
 
 @app.post("/cases")
@@ -65,68 +63,39 @@ async def upload_source(
     case_token: Annotated[str | None, Header(alias="X-Case-Token")] = None,
     deepseek_key: Annotated[str | None, Header(alias="X-DeepSeek-Key")] = None,
     deepseek_model: Annotated[str | None, Header(alias="X-DeepSeek-Model")] = None,
-    gemini_key: Annotated[str | None, Header(alias="X-Gemini-Key")] = None,
-    gemini_model: Annotated[str | None, Header(alias="X-Gemini-Model")] = None,
-    gemini_consent: Annotated[str | None, Header(alias="X-Gemini-Data-Consent")] = None,
-    gemini_enabled: Annotated[str | None, Header(alias="X-Gemini-Enabled")] = None,
 ):
     payload = authorize(case_id, case_token)
     validate_model(deepseek_model)
-    validate_gemini_model(gemini_model)
     if system_id not in payload["systems"]:
         raise HTTPException(422, "该 chamber 不属于此案件")
-    if (gemini_key or gemini_enabled == "true") and gemini_consent != "acknowledged":
-        raise HTTPException(428, "启用 Gemini 前必须确认数据传输与免费层隐私提示")
     filename = file.filename or "uploaded report"
-    data, suffix, mime_type = await read_upload(file)
+    data, suffix, _ = await read_upload(file)
     facts: list[Fact] = []
     commentary: list[str] = []
     warnings: list[str] = []
     source_text = ""
     extraction_engine = "manual_required"
-    gemini_available = gemini_enabled == "true" and bool(gemini_key or os.getenv("GEMINI_API_KEY"))
-    if suffix in TEXT_TYPES:
+    try:
         source_text, file_warnings = await extract_bytes(data, suffix)
         warnings.extend(file_warnings)
-    if gemini_available:
-        gemini_facts, gemini_commentary, gemini_warning = await extract_facts_with_gemini(
+    except HTTPException as exc:
+        warnings.append(str(exc.detail))
+    if len(source_text) >= 12:
+        extracted_facts, excluded_commentary, extraction_warning = await extract_facts_only(
             system_id,
-            data,
-            mime_type,
+            source_text,
             filename,
-            gemini_key,
-            gemini_model,
-            source_text=source_text if suffix in TEXT_TYPES else None,
+            deepseek_key,
+            deepseek_model,
         )
-        if gemini_facts:
-            facts = gemini_facts
-            commentary = gemini_commentary
-            extraction_engine = "gemini_text" if suffix in TEXT_TYPES else "gemini_vision"
-        elif gemini_warning:
-            warnings.append(f"{gemini_warning}；已尝试本地回退。")
-    if not facts:
-        if not source_text:
-            try:
-                source_text, file_warnings = await extract_bytes(data, suffix)
-                warnings.extend(file_warnings)
-            except HTTPException as exc:
-                warnings.append(str(exc.detail))
-        if len(source_text) >= 12:
-            fallback_facts, fallback_commentary, extraction_warning = await extract_facts_only(
-                system_id,
-                source_text,
-                filename,
-                deepseek_key,
-                deepseek_model,
-            )
-            if fallback_facts:
-                facts = fallback_facts
-                commentary = fallback_commentary
-                extraction_engine = "deepseek_text"
-            if extraction_warning:
-                warnings.append(extraction_warning)
-        else:
-            warnings.append("本地回退没有取得足够文字；请配置 Gemini 或在确认页手动补充事实。")
+        if extracted_facts:
+            facts = extracted_facts
+            commentary = excluded_commentary
+            extraction_engine = "deepseek_text"
+        if extraction_warning:
+            warnings.append(extraction_warning)
+    else:
+        warnings.append("本地读取没有取得足够文字；请改用 TXT/文本 PDF，或在确认页手动补充事实。")
     extraction = {
         "system_id": system_id,
         "display_name": SYSTEMS[system_id],
@@ -272,11 +241,6 @@ def validate_systems(systems: list[str]) -> list[str]:
 def validate_model(model: str | None) -> None:
     if model and model not in ALLOWED_MODELS:
         raise HTTPException(422, "Unsupported DeepSeek model")
-
-
-def validate_gemini_model(model: str | None) -> None:
-    if model and model not in ALLOWED_GEMINI_MODELS:
-        raise HTTPException(422, "Unsupported Gemini model")
 
 
 def authorize(case_id: str, token: str | None) -> dict:

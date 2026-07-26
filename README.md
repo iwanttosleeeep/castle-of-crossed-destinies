@@ -6,8 +6,7 @@
 
 - 每套体系分别上传 PDF、TXT/MD、PNG/JPG/WEBP/TIFF
 - 文本 PDF 直接读取；扫描 PDF 与图片使用 Tesseract OCR
-- Gemini 可直接视觉读取原始 PDF/图片；失败时回退到本地 OCR + DeepSeek 文本抽取
-- AI 第一阶段只抽取显式盘面事实，并隔离原报告中的解释性文字
+- DeepSeek 从本地取得的临时文字中只抽取显式盘面事实，并隔离原报告中的解释性文字
 - 用户逐条修改、删除、补充和确认抽取事实
 - 七个项目内、版本可控的 Chamber Skills：`skills/*-chamber/`
 - 共享证据契约、受控主题词表、每套体系独立知识边界与来源
@@ -59,7 +58,7 @@ docker compose cp api:/data/castle-backup.db ./castle-backup.db
 
 若希望访客在网页中安全填写 BYOK，请把域名解析到 VPS，在仓库根目录 `.env`
 写入 `CASTLE_DOMAIN=castle.example.com` 后重新启动。Caddy 会自动申请 HTTPS；
-直接以 IP 和 HTTP 访问时，前端会拒绝发送访客 Key，只能使用服务器端 Key。
+直接以 IP 和 HTTP 访问时仍可测试，但 Key 的传输没有 HTTPS 保护。
 
 ## 工作流与隐私边界
 
@@ -70,45 +69,23 @@ docker compose cp api:/data/castle-backup.db ./castle-backup.db
 5. `POST /cases/{id}/debates` 执行固定一轮的回答、质询、反驳和总结。
 6. `GET /cases/{id}` 配合 `X-Case-Token` 恢复案件。
 
-后端不会自行排盘。它只把每间 chamber 的已确认事实、共享证据契约、
-`SKILL.md` 与 `references/knowledge.md` 单独传给 DeepSeek；所有 claim 都必须
+后端不会自行排盘。上传阶段，本地解析器读取 TXT/文本 PDF，或对扫描件运行 OCR；
+DeepSeek 只从该临时文字中抽取显式事实，原文件和完整文本不落盘。用户确认后，
+后端只把每间 chamber 的已确认事实、共享证据契约、`SKILL.md` 与
+`references/knowledge.md` 单独传给 DeepSeek；所有 claim 都必须
 同时回指事实 ID 与知识包中的规则 ID。第一遍只生成中性证词，第二遍只根据
 `references/persona.md` 改写语气。Tribunal 应始终使用 `neutral_statement`，
 而不是人物化后的 `statement`。
 
-上传限制为每份 15 MB。本地 PDF 回退处理前 40 页；Gemini 视觉模式直接读取
-原始 PDF/图片。数据库会保存用户确认后的事实、证词、
+上传限制为每份 15 MB。本地 PDF 最多处理前 40 页。数据库会保存用户确认后的事实、证词、
 Tribunal 和辩论记录；不会保存原始 PDF/图片、完整 OCR 文本或 API Key。
-
-## Gemini 视觉抽取
-
-首页可分别填写两把 Key：Gemini 只负责看原始报告并抽取事实；DeepSeek 只读取
-用户确认后的事实，用于七份报告、Tribunal 和辩论。两把 Key 都只保存在当前
-页面内存，通过 HTTPS 请求转发，不进入数据库或日志。
-
-Gemini 免费层提交内容可能被 Google 用于改进产品并可能由人工审核。出生报告
-通常包含姓名、日期、时间和地点，因此界面会要求访客明确确认数据提示；正式
-公开部署建议使用 Gemini 付费层。即使服务器已经配置 Gemini Key，访客也必须
-主动勾选启用；未勾选时原文件绝不会发送给 Gemini，而是使用本地 OCR 与
-DeepSeek 文本抽取。
-
-自托管可在 `backend/.env` 配置：
-
-```env
-GEMINI_API_KEY=你的密钥
-GEMINI_MODEL=gemini-3.6-flash
-```
-
-Gemini 3.6 起不再接受 `temperature` 等旧采样参数，并更新了结构化输出字段；
-Castle 已使用兼容的 `responseFormat` 请求格式。
-首页也可切换到 `gemini-3.5-flash-lite`，用于更快的批量文档抽取。
 
 ## 配置 DeepSeek
 
 支持两种方式：
 
-1. **访客 BYOK**：在首页输入 Key。Key 只保存在当前页面内存，经 HTTPS
-   通过 `X-DeepSeek-Key` 发送给后端后立即转发；不写入 localStorage、数据库或日志。
+1. **访客 BYOK**：在首页输入 Key。Key 只保存在当前页面内存，通过
+   `X-DeepSeek-Key` 发送给后端后立即转发；不写入 localStorage、数据库或日志。
 2. **自托管默认 Key**：复制并填写仅存放在服务器上的环境文件：
 
 ```bash
