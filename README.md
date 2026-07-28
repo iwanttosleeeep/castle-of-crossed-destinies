@@ -6,12 +6,14 @@
 
 - 每套体系分别上传 PDF、TXT/MD、PNG/JPG/WEBP/TIFF
 - 文本 PDF 直接读取；扫描 PDF 与图片使用 Tesseract OCR
+- 项目使用的六份 AI-readable TXT/JSON 由本地确定性解析器直接读取，不让模型猜字段；
+  西占和印占优先保留核心盘面、分盘与时限层，最多 80 条事实
 - DeepSeek 从本地取得的临时文字中只抽取显式盘面事实，并隔离原报告中的解释性文字
 - 用户逐条修改、删除、补充和确认抽取事实
 - 七个项目内、版本可控的 Chamber Skills：`skills/*-chamber/`
 - 共享证据契约、受控主题词表、每套体系独立知识边界与来源
 - 中性证词与人物语气分两次生成；Tribunal 只读取中性证词
-- 九个统一栏目组成 general report；证据不足的栏目明确弃权
+- General report 只展开实际形成证词的栏目，未覆盖主题折叠保留供审计
 - Tribunal 区分 genuine convergence、表面共识、直接冲突、侧重差异与不可比较
 - 用户提问后：独立回答 → 主持人定向 challenge → 每室一次 rebuttal → 结案总结
 - SQLite 案件保存与恢复令牌；API Key 和原始上传文件不进入数据库
@@ -21,6 +23,8 @@
 匹配知识包规则，可以产生低置信度、有 caveat 的条件式解读；缺少次要 convention
 只会降低置信度。若首轮输出因引用 ID 不合规而全部被过滤，后端会使用明确的
 事实、规则和主题白名单自动重试一次。
+所有报告及角色化开场均锁定为简体中文；非中文角色开场会被后端拒绝并回退到
+中性中文证词。
 
 ## 启动
 
@@ -74,8 +78,9 @@ docker compose cp api:/data/castle-backup.db ./castle-backup.db
 5. `POST /cases/{id}/debates` 执行固定一轮的回答、质询、反驳和总结。
 6. `GET /cases/{id}` 配合 `X-Case-Token` 恢复案件。
 
-后端不会自行排盘。上传阶段，本地解析器读取 TXT/文本 PDF，或对扫描件运行 OCR；
-DeepSeek 只从该临时文字中抽取显式事实，原文件和完整文本不落盘。用户确认后，
+后端不会自行排盘。上传阶段，本地解析器先直接识别项目的结构化 TXT/JSON；其他
+TXT/文本 PDF 由 DeepSeek 从临时文字中抽取显式事实，扫描件则先在本地运行 OCR。
+原文件和完整文本不落盘。用户确认后，
 后端只把每间 chamber 的已确认事实、共享证据契约、`SKILL.md` 与
 `references/knowledge.md` 单独传给 DeepSeek；所有 claim 都必须
 同时回指事实 ID 与知识包中的规则 ID。第一遍只生成中性证词，第二遍只根据

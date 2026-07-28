@@ -11,6 +11,7 @@ from .files import extract_bytes, read_upload
 from .providers import SYSTEMS
 from .schemas import CaseCreateRequest, DebateRequest, Fact, FactConfirmation
 from .store import CaseStore
+from .structured import extract_structured_facts
 from .tribunal import run_tribunal
 
 
@@ -37,7 +38,7 @@ app.add_middleware(
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "engine": "local text extraction + DeepSeek skills", "chambers": list(SYSTEMS)}
+    return {"status": "ok", "engine": "deterministic structured text + local PDF text + DeepSeek skills", "chambers": list(SYSTEMS)}
 
 
 @app.post("/cases")
@@ -81,19 +82,25 @@ async def upload_source(
     except HTTPException as exc:
         warnings.append(str(exc.detail))
     if len(source_text) >= 12:
-        extracted_facts, excluded_commentary, extraction_warning = await extract_facts_only(
-            system_id,
-            source_text,
-            filename,
-            deepseek_key,
-            deepseek_model,
-        )
-        if extracted_facts:
-            facts = extracted_facts
-            commentary = excluded_commentary
-            extraction_engine = "deepseek_text"
-        if extraction_warning:
-            warnings.append(extraction_warning)
+        structured_facts = extract_structured_facts(system_id, source_text)
+        if structured_facts:
+            facts = structured_facts
+            extraction_engine = "structured_text"
+            warnings.append("已按结构化 TXT/JSON 原样解析；未使用 AI 猜测盘面字段，请仍在确认页核对。")
+        else:
+            extracted_facts, excluded_commentary, extraction_warning = await extract_facts_only(
+                system_id,
+                source_text,
+                filename,
+                deepseek_key,
+                deepseek_model,
+            )
+            if extracted_facts:
+                facts = extracted_facts
+                commentary = excluded_commentary
+                extraction_engine = "deepseek_text"
+            if extraction_warning:
+                warnings.append(extraction_warning)
     else:
         warnings.append("本地读取没有取得足够文字；请改用 TXT/文本 PDF，或在确认页手动补充事实。")
     extraction = {

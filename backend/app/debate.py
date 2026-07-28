@@ -7,6 +7,7 @@ from .deepseek import (
     RULE_PATTERN,
     bounded_input,
     call_json,
+    contains_han,
     persona_instructions,
     skill_instructions,
 )
@@ -65,6 +66,7 @@ async def independent_answer(
     prompt = f"""{instructions}
 
 Answer the visitor's question only when these facts support an answer. You cannot see other chambers.
+Write every human-readable output field in Simplified Chinese, retaining technical terms when needed.
 Return JSON only: {{"answer":"neutral evidence-bound answer or explicit abstention","evidence_ids":["fact.id"],"rule_ids":["RULE-ID"],"caveat":"material limitation","abstained":false}}.
 If the question asks for unsupported prediction, health/legal/financial certainty, or facts outside the dossier, abstain.
 Do not reveal chain-of-thought."""
@@ -98,6 +100,7 @@ async def moderate_challenges(question: str, answers: list[dict], api_key: str, 
     system_ids = {answer["system_id"] for answer in answers}
     neutral = [{"system_id": answer["system_id"], "answer": answer["neutral_answer"]} for answer in answers]
     prompt = """You are a neutral moderator. Compare independent answers to one visitor question.
+Write every human-readable output field in Simplified Chinese.
 Identify only material contradictions or assumptions worth testing. Do not manufacture disagreement.
 Issue at most one challenge to any chamber and at most five total. A challenge must name a target_system.
 Return JSON only: {"challenges":[{"target_system":"id","raised_by":"another id or moderator","issue":"specific tension","question":"one precise rebuttal question"}]}.
@@ -137,6 +140,7 @@ async def rebuttal(
     prompt = f"""{instructions}
 
 This is your single rebuttal. Answer only the moderator's challenge using your own dossier.
+Write every human-readable output field in Simplified Chinese, retaining technical terms when needed.
 You may narrow, clarify, concede, or maintain the original neutral answer. Do not introduce new chart facts.
 Return JSON only: {{"rebuttal":"neutral response","evidence_ids":["fact.id"],"rule_ids":["RULE-ID"],"disposition":"maintained|narrowed|conceded|unresolved","caveat":"limitation"}}.
 Do not reveal chain-of-thought."""
@@ -170,6 +174,7 @@ async def final_summary(
     question: str, answers: list[dict], challenges: list[dict], rebuttals: list[dict], api_key: str, model: str | None
 ) -> dict:
     prompt = """You are the final neutral moderator. Summarize a completed one-round hearing.
+Write every human-readable output field in Simplified Chinese.
 Use only the provided neutral answers, challenges, and neutral rebuttals. Separate what remains aligned,
 what remains in conflict, what was narrowed or conceded, and what is unanswerable. Do not synthesize a prediction.
 Return JSON only: {"aligned":["..."],"still_conflicted":["..."],"resolved_or_narrowed":["..."],"unanswerable":["..."],"closing":"short careful conclusion"}.
@@ -192,7 +197,8 @@ Do not reveal chain-of-thought."""
 
 async def style_answer(system_id: str, neutral: str, api_key: str, model: str | None) -> str:
     prompt = f"""{persona_instructions(system_id)}
-You are a voice framer, not an interpreter. Keep the neutral text as an exact continuous substring.
+You are a voice framer, not an interpreter. Write framing in Simplified Chinese only.
+Keep the neutral text as an exact continuous substring.
 Add at most one short in-character lead-in. Do not change factual or modal content.
 Return JSON only: {{"statement":"lead-in + exact neutral text"}}."""
     try:
@@ -200,7 +206,8 @@ Return JSON only: {{"statement":"lead-in + exact neutral text"}}."""
     except (HTTPError, URLError, TimeoutError, KeyError, TypeError, json.JSONDecodeError):
         return neutral
     candidate = bounded_input(body.get("statement"), len(neutral) + 120)
-    return candidate if neutral in candidate else neutral
+    framing = candidate.replace(neutral, "", 1).strip() if neutral in candidate else ""
+    return candidate if neutral in candidate and (not framing or contains_han(framing)) else neutral
 
 
 def model_payload(model: str | None, prompt: str, content: object, max_tokens: int, thinking: bool) -> dict:

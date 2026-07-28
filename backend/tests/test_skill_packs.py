@@ -116,18 +116,20 @@ class ChamberRunnerTests(unittest.IsolatedAsyncioTestCase):
         prompt = payload["messages"][0]["content"]
         self.assertIn("PERMITTED EVIDENCE IDS", prompt)
         self.assertIn("PERMITTED RULE IDS", prompt)
+        self.assertIn("SUGGESTED RULE IDS BY EVIDENCE ID", prompt)
+        self.assertIn("WEST-PLANET-SUN", prompt)
         self.assertIn("single explicit fact", prompt)
 
     async def test_persona_pass_cannot_replace_neutral_testimony(self):
         neutral_response = {
             "claims": [
                 {
-                    "neutral_statement": "The supplied Sun fact supports a bounded identity theme.",
+                    "neutral_statement": "这条太阳事实支持一项边界明确的自我组织解读。",
                     "themes": ["identity_orientation"],
                     "evidence_ids": ["western.sun-1"],
                     "rule_ids": ["WEST-PLANET-SUN"],
-                    "caveat": "No house or aspect context was supplied.",
-                    "counter_reading": "Other chart factors could redirect visibility.",
+                    "caveat": "尚未提供宫位或相位背景。",
+                    "counter_reading": "其他盘面因素可能改变其外显方式。",
                     "confidence": 0.55,
                     "specificity": 0.52,
                     "barnum_risk": 0.4,
@@ -138,7 +140,7 @@ class ChamberRunnerTests(unittest.IsolatedAsyncioTestCase):
             "statements": [
                 {
                     "index": 0,
-                    "statement": "The cartographer marks this route: The supplied Sun fact supports a bounded identity theme.",
+                    "statement": "制图师在这里标下一条路线：这条太阳事实支持一项边界明确的自我组织解读。",
                 }
             ]
         }
@@ -154,11 +156,11 @@ class ChamberRunnerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(claims), 1)
         self.assertEqual(
             claims[0].neutral_statement,
-            "The supplied Sun fact supports a bounded identity theme.",
+            "这条太阳事实支持一项边界明确的自我组织解读。",
         )
         self.assertEqual(
             claims[0].statement,
-            "The cartographer marks this route: The supplied Sun fact supports a bounded identity theme.",
+            "制图师在这里标下一条路线：这条太阳事实支持一项边界明确的自我组织解读。",
         )
         self.assertEqual(claims[0].rule_ids, ["WEST-PLANET-SUN"])
         self.assertEqual(mocked_call.await_count, 2)
@@ -207,9 +209,9 @@ class ChamberRunnerTests(unittest.IsolatedAsyncioTestCase):
             "claims": [
                 {
                     "neutral_statement": "太阳这一明确位置可在西占内部谨慎地讨论自我组织与可见性，但不能单独定义整个人格。",
-                    "themes": ["identity_orientation"],
-                    "evidence_ids": ["western.sun-1"],
-                    "rule_ids": ["west-planet-sun"],
+                    "themes": "identity",
+                    "evidence_ids": "western.sun-1",
+                    "rule_ids": "west-planet-sun",
                     "caveat": "缺少宫位与相位上下文。",
                     "counter_reading": "其他行星配置可能改变表达重心。",
                     "confidence": 0.42,
@@ -237,12 +239,12 @@ class ChamberRunnerTests(unittest.IsolatedAsyncioTestCase):
         neutral_response = {
             "claims": [
                 {
-                    "neutral_statement": "Only the supplied number supports a cautious inquiry theme.",
+                    "neutral_statement": "仅凭已提供的数字，可以形成一项谨慎的探索主题。",
                     "themes": ["meaning_imagination"],
                     "evidence_ids": ["numerology.life-path-1"],
                     "rule_ids": ["NUM-LIFEPATH-001"],
-                    "caveat": "The calculation convention is incomplete.",
-                    "counter_reading": "Another reduction convention may differ.",
+                    "caveat": "计算约定尚不完整。",
+                    "counter_reading": "另一种缩减约定可能产生不同结果。",
                     "confidence": 0.45,
                     "specificity": 0.45,
                     "barnum_risk": 0.5,
@@ -272,6 +274,73 @@ class ChamberRunnerTests(unittest.IsolatedAsyncioTestCase):
                 )
 
         self.assertEqual(claims[0].statement, claims[0].neutral_statement)
+
+    async def test_non_chinese_persona_framing_is_rejected(self):
+        neutral_response = {
+            "claims": [{
+                "neutral_statement": "这项类型事实适合转化为可观察的决策实验。",
+                "themes": ["decision_style"],
+                "evidence_ids": ["human_design.type-1"],
+                "rule_ids": ["HD-TYPE-GENERATOR"],
+                "caveat": "这不是科学因果声明。",
+                "counter_reading": "一次体验不能代表长期模式。",
+                "confidence": 0.6,
+                "specificity": 0.6,
+                "barnum_risk": 0.3,
+            }]
+        }
+        german_style = {
+            "statements": [{
+                "index": 0,
+                "statement": "Der Mechaniker notiert: 这项类型事实适合转化为可观察的决策实验。",
+            }]
+        }
+        mocked_call = AsyncMock(side_effect=[neutral_response, german_style])
+        with patch("backend.app.deepseek.call_json", mocked_call):
+            claims, warning = await run_chamber_skill(
+                "human_design",
+                [Fact(id="human_design.type-1", label="Type", value="Generator")],
+                request_api_key="visitor-key",
+            )
+
+        self.assertIsNone(warning)
+        self.assertEqual(claims[0].statement, claims[0].neutral_statement)
+
+    async def test_non_chinese_claim_is_localized_before_display(self):
+        german_claim = {
+            "claims": [{
+                "neutral_statement": "Der Typ Generator wird hier als beobachtbares Experiment gelesen.",
+                "themes": ["decision_style"],
+                "evidence_ids": ["human_design.type-1"],
+                "rule_ids": ["HD-TYPE-GENERATOR"],
+                "caveat": "Dies ist keine wissenschaftliche Kausalbehauptung.",
+                "counter_reading": "Eine einzelne Erfahrung belegt kein dauerhaftes Muster.",
+                "confidence": 0.6,
+                "specificity": 0.6,
+                "barnum_risk": 0.3,
+            }]
+        }
+        chinese_translation = {
+            "translations": [{
+                "index": 0,
+                "neutral_statement": "这里把生产者类型理解为一项可观察的实验。",
+                "caveat": "这不是科学因果声明。",
+                "counter_reading": "一次体验不能证明长期模式。",
+            }]
+        }
+        style_response = {"statements": []}
+        mocked_call = AsyncMock(side_effect=[german_claim, chinese_translation, style_response])
+        with patch("backend.app.deepseek.call_json", mocked_call):
+            claims, warning = await run_chamber_skill(
+                "human_design",
+                [Fact(id="human_design.type-1", label="Type", value="Generator")],
+                request_api_key="visitor-key",
+            )
+
+        self.assertIsNone(warning)
+        self.assertEqual(claims[0].neutral_statement, "这里把生产者类型理解为一项可观察的实验。")
+        self.assertEqual(claims[0].caveat, "这不是科学因果声明。")
+        self.assertEqual(mocked_call.await_count, 3)
 
 
 if __name__ == "__main__":

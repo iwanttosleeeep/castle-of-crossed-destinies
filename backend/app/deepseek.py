@@ -22,7 +22,33 @@ THEMES = {
     "change_timing",
     "meaning_imagination",
 }
+THEME_ALIASES = {
+    "identity": "identity_orientation",
+    "core": "identity_orientation",
+    "核心结构": "identity_orientation",
+    "decision": "decision_style",
+    "决策方式": "decision_style",
+    "communication": "thinking_communication",
+    "thinking": "thinking_communication",
+    "思考与沟通": "thinking_communication",
+    "relationships": "relationships_boundaries",
+    "关系与边界": "relationships_boundaries",
+    "work": "work_creation",
+    "creation": "work_creation",
+    "工作与创造": "work_creation",
+    "resources": "resources_stewardship",
+    "资源与管理": "resources_stewardship",
+    "stress": "stress_adaptation",
+    "压力与适应": "stress_adaptation",
+    "change": "change_timing",
+    "timing": "change_timing",
+    "变化与时机": "change_timing",
+    "meaning": "meaning_imagination",
+    "imagination": "meaning_imagination",
+    "意义与想象": "meaning_imagination",
+}
 RULE_PATTERN = re.compile(r"\b(?:BAZI|ZIWEI|WEST|JYOTISH|NUM|HD|DREAM)-[A-Z0-9-]+\b")
+HAN_PATTERN = re.compile(r"[\u3400-\u9fff]")
 EXTRACTION_HINTS = {
     "bazi": "four pillars, stems, branches, hidden stems, ten gods, five-element counts, strength/season labels, printed luck cycles",
     "ziwei": "palace names and branches, stars in each palace, transformations, body/life palace, printed decade or annual layers",
@@ -31,6 +57,88 @@ EXTRACTION_HINTS = {
     "numerology": "exact input names and birth date, named calculation system, Life Path and other explicitly calculated number values",
     "human_design": "Type, Strategy, Authority, Profile, Definition, Centers, Channels, Gates, Incarnation Cross, Variables",
     "dreamspell": "Kin number, Galactic Tone, Solar Seal, wavespell or other explicitly printed Dreamspell labels",
+}
+
+DEFAULT_RULE_HINTS = {
+    "bazi": "BAZI-STRUCT-001",
+    "ziwei": "ZIWEI-STRUCT-001",
+    "western": "WEST-GRAMMAR-001",
+    "jyotish": "JYOTISH-LAYER-001",
+    "numerology": "NUM-CONVENTION-001",
+    "human_design": "HD-EXPERIMENT-001",
+    "dreamspell": "DREAM-STRUCT-001",
+}
+
+RULE_HINT_KEYWORDS = {
+    "bazi": [
+        (("month_pillar", "月柱", "season"), "BAZI-SEASON-001"),
+        (("day_pillar", "日柱", "day master", "日主"), "BAZI-WHOLE-001"),
+        (("比肩", "劫财"), "BAZI-PEER-001"),
+        (("食神", "伤官"), "BAZI-OUTPUT-001"),
+        (("正财", "偏财"), "BAZI-WEALTH-001"),
+        (("正官", "七杀"), "BAZI-POWER-001"),
+        (("正印", "偏印"), "BAZI-RESOURCE-001"),
+        (("大运", "流年", "luck cycle"), "BAZI-CYCLE-001"),
+    ],
+    "ziwei": [
+        (("紫微",), "ZIWEI-STAR-ZW"), (("天机",), "ZIWEI-STAR-TJ"),
+        (("太阳",), "ZIWEI-STAR-TY"), (("武曲",), "ZIWEI-STAR-WQ"),
+        (("天同",), "ZIWEI-STAR-TT"), (("廉贞",), "ZIWEI-STAR-LZ"),
+        (("天府",), "ZIWEI-STAR-TF"), (("太阴",), "ZIWEI-STAR-TYIN"),
+        (("贪狼",), "ZIWEI-STAR-TL"), (("巨门",), "ZIWEI-STAR-JM"),
+        (("天相",), "ZIWEI-STAR-TX"), (("天梁",), "ZIWEI-STAR-TLIANG"),
+        (("七杀",), "ZIWEI-STAR-QS"), (("破军",), "ZIWEI-STAR-PJ"),
+        (("生年禄", "化禄"), "ZIWEI-LU-001"), (("生年权", "化权"), "ZIWEI-QUAN-001"),
+        (("生年科", "化科"), "ZIWEI-KE-001"), (("生年忌", "化忌"), "ZIWEI-JI-001"),
+        (("大限", "decade_limit", "annual_limit"), "ZIWEI-CYCLE-001"),
+        (("body_palace", "身宫"), "ZIWEI-BODY-001"),
+    ],
+    "western": [
+        (("sun",), "WEST-PLANET-SUN"), (("moon",), "WEST-PLANET-MOON"),
+        (("mercury",), "WEST-PLANET-MERCURY"), (("venus",), "WEST-PLANET-VENUS"),
+        (("mars",), "WEST-PLANET-MARS"), (("jupiter",), "WEST-PLANET-JUPITER"),
+        (("saturn",), "WEST-PLANET-SATURN"), (("uranus",), "WEST-PLANET-URANUS"),
+        (("neptune",), "WEST-PLANET-NEPTUNE"), (("pluto",), "WEST-PLANET-PLUTO"),
+        (("conjunction",), "WEST-ASPECT-CONJ"), (("opposition",), "WEST-ASPECT-OPP"),
+        (("square",), "WEST-ASPECT-SQUARE"), (("trine",), "WEST-ASPECT-TRINE"),
+        (("sextile",), "WEST-ASPECT-SEXTILE"),
+        (("ascendant", "descendant", "mc", "ic"), "WEST-ANGLE-001"),
+        (("house", "cusp"), "WEST-HOUSE-001"), (("orb",), "WEST-ASPECT-ORB"),
+    ],
+    "jyotish": [
+        (("sun", "surya"), "JYOTISH-GRAHA-SURYA"), (("moon", "chandra"), "JYOTISH-GRAHA-CHANDRA"),
+        (("mars", "mangala"), "JYOTISH-GRAHA-MANGALA"), (("mercury", "budha"), "JYOTISH-GRAHA-BUDHA"),
+        (("jupiter", "guru"), "JYOTISH-GRAHA-GURU"), (("venus", "shukra"), "JYOTISH-GRAHA-SHUKRA"),
+        (("saturn", "shani"), "JYOTISH-GRAHA-SHANI"), (("rahu",), "JYOTISH-GRAHA-RAHU"),
+        (("ketu",), "JYOTISH-GRAHA-KETU"), (("lagna", "ascendant"), "JYOTISH-LAGNA-001"),
+        (("nakshatra", "pada"), "JYOTISH-NAKSHATRA-001"), (("dasa", "dasha"), "JYOTISH-DASHA-001"),
+        (("d-1", "d-9", "navamsa", "rasi"), "JYOTISH-LAYER-001"),
+        (("ayanamsha", "house system"), "JYOTISH-CONVENTION-001"),
+    ],
+    "numerology": [
+        (("life_path", "life path"), "NUM-LIFEPATH-001"), (("birthday",), "NUM-BIRTHDAY-001"),
+        (("expression",), "NUM-EXPRESSION-001"), (("soul", "heart"), "NUM-SOUL-001"),
+        (("personality",), "NUM-PERSONALITY-001"), (("cycle", "pinnacle"), "NUM-CYCLE-001"),
+        (("11",), "NUM-VALUE-11"), (("22",), "NUM-VALUE-22"), (("33",), "NUM-VALUE-33"),
+        (("/1", " 1", ": 1"), "NUM-VALUE-1"), (("/2", " 2", ": 2"), "NUM-VALUE-2"),
+        (("/3", " 3", ": 3"), "NUM-VALUE-3"), (("/4", " 4", ": 4"), "NUM-VALUE-4"),
+        (("/5", " 5", ": 5"), "NUM-VALUE-5"), (("/6", " 6", ": 6"), "NUM-VALUE-6"),
+        (("/7", " 7", ": 7"), "NUM-VALUE-7"), (("/8", " 8", ": 8"), "NUM-VALUE-8"),
+        (("/9", " 9", ": 9"), "NUM-VALUE-9"),
+    ],
+    "human_design": [
+        (("generator",), "HD-TYPE-GENERATOR"), (("projector",), "HD-TYPE-PROJECTOR"),
+        (("manifestor",), "HD-TYPE-MANIFESTOR"), (("reflector",), "HD-TYPE-REFLECTOR"),
+        (("sacral",), "HD-AUTH-SACRAL"), (("emotional",), "HD-AUTH-EMOTIONAL"),
+        (("splenic",), "HD-AUTH-SPLENIC"), (("profile",), "HD-PROFILE-001"),
+        (("definition",), "HD-DEFINITION-001"), (("center",), "HD-CENTER-001"),
+        (("channel",), "HD-CHANNEL-001"), (("gate",), "HD-GATE-001"),
+    ],
+    "dreamspell": [
+        (("electric", "tone", "tone: 3"), "DREAM-TONE-3"),
+        (("skywalker", "sky walker", "天行者"), "DREAM-SEAL-SKYWALKER"),
+        (("kin",), "DREAM-STRUCT-001"),
+    ],
 }
 
 
@@ -64,11 +172,15 @@ async def run_chamber_skill(
     allowed_ids = {fact.id for fact in facts}
     instructions = skill_instructions(system_id)
     allowed_rule_ids = set(RULE_PATTERN.findall(instructions))
+    rule_hints = suggested_rules(system_id, facts, allowed_rule_ids)
     permitted_references = f"""PERMITTED EVIDENCE IDS (copy exactly):
 {json.dumps(sorted(allowed_ids), ensure_ascii=False)}
 
 PERMITTED RULE IDS (copy exactly):
 {json.dumps(sorted(allowed_rule_ids), ensure_ascii=False)}
+
+SUGGESTED RULE IDS BY EVIDENCE ID (choose only rules that fit the claim):
+{json.dumps(rule_hints, ensure_ascii=False)}
 
 PERMITTED THEME IDS (copy exactly):
 {json.dumps(sorted(THEMES), ensure_ascii=False)}"""
@@ -78,7 +190,8 @@ Return JSON only, using exactly this shape:
 {{"claims":[{{"neutral_statement":"plain evidence-bound interpretation","themes":["one_to_three_controlled_themes"],"evidence_ids":["fact.id"],"rule_ids":["PERMITTED-RULE-ID"],"caveat":"material limitation","counter_reading":"factor that could weaken this reading","confidence":0.0,"specificity":0.0,"barnum_risk":0.0}}]}}
 {permitted_references}
 
-Write concise neutral statements in Chinese while preserving technical terms. Interpret rather than
+All human-readable output fields MUST use Simplified Chinese; preserve necessary technical terms in
+their original language. Write concise neutral statements. Interpret rather than
 merely restating the dossier. Aim for 4–7 distinct useful claims when the dossier is rich, or 2–4 when
 only 1–3 primary symbols are supplied. A single explicit fact plus a directly matching rule is enough
 for one narrow conditional claim at low confidence. Missing secondary context belongs in caveat and
@@ -108,7 +221,8 @@ chain-of-thought."""
                 {
                     "role": "user",
                     "content": f"""The first answer produced no admissible claims. Try once more.
-Use only the exact IDs below. Produce 2–5 narrow conditional interpretations. Do not merely restate
+Use only the exact IDs below. ALL human-readable fields must be in Simplified Chinese. Produce 2–5
+narrow conditional interpretations. Do not merely restate
 facts, and do not calculate or invent missing chart data. A direct fact plus its matching lexicon rule
 is sufficient; put missing context in caveat and keep confidence at or below 0.45 when isolated.
 
@@ -122,6 +236,7 @@ is sufficient; put missing context in caveat and keep confidence at or below 0.4
         except (HTTPError, URLError, TimeoutError, KeyError, TypeError, json.JSONDecodeError):
             claims = []
     if claims:
+        claims = await localize_claims(claims, api_key, request_model)
         claims = await style_claims(system_id, claims, api_key, request_model)
         return claims, None
     return [], f"本室收到 {len(facts)} 条已确认事实，但两次生成都没有形成通过证据、规则与主题校验的解读；可以重新生成。"
@@ -140,7 +255,7 @@ def validated_claims(
         evidence_ids = validated_references(item.get("evidence_ids"), allowed_ids)
         rule_ids = validated_references(item.get("rule_ids"), allowed_rule_ids, uppercase=True)
         neutral = item.get("neutral_statement")
-        themes = validated_references(item.get("themes"), THEMES)[:3]
+        themes = validated_themes(item.get("themes"))[:3]
         if not evidence_ids or not rule_ids or not themes or not isinstance(neutral, str) or not neutral.strip():
             continue
         neutral = neutral.strip()
@@ -164,6 +279,8 @@ def validated_claims(
 
 
 def validated_references(value: object, allowed: set[str], uppercase: bool = False) -> list[str]:
+    if isinstance(value, str):
+        value = [value]
     if not isinstance(value, list):
         return []
     valid = []
@@ -176,6 +293,96 @@ def validated_references(value: object, allowed: set[str], uppercase: bool = Fal
         if candidate in allowed and candidate not in valid:
             valid.append(candidate)
     return valid
+
+
+def validated_themes(value: object) -> list[str]:
+    if isinstance(value, str):
+        value = [value]
+    if not isinstance(value, list):
+        return []
+    valid = []
+    for item in value:
+        if not isinstance(item, str):
+            continue
+        candidate = item.strip().strip("`'\"")
+        normalized = candidate if candidate in THEMES else THEME_ALIASES.get(candidate.lower())
+        if normalized and normalized not in valid:
+            valid.append(normalized)
+    return valid
+
+
+def suggested_rules(system_id: str, facts: list[Fact], allowed_rule_ids: set[str]) -> dict[str, list[str]]:
+    default = DEFAULT_RULE_HINTS[system_id]
+    suggestions = {}
+    for fact in facts:
+        haystack = f"{fact.label} {fact.value}".lower()
+        matched = []
+        for keywords, rule_id in RULE_HINT_KEYWORDS[system_id]:
+            if rule_id in allowed_rule_ids and any(keyword.lower() in haystack for keyword in keywords):
+                if rule_id not in matched:
+                    matched.append(rule_id)
+        if not matched and default in allowed_rule_ids:
+            matched.append(default)
+        suggestions[fact.id] = matched[:5]
+    return suggestions
+
+
+def contains_han(value: str) -> bool:
+    return bool(HAN_PATTERN.search(value))
+
+
+async def localize_claims(claims: list[Claim], api_key: str, request_model: str | None = None) -> list[Claim]:
+    """Translate non-Chinese model prose without exposing facts or reopening interpretation."""
+    pending = [
+        {
+            "index": index,
+            "neutral_statement": claim.neutral_statement,
+            "caveat": claim.caveat,
+            "counter_reading": claim.counter_reading,
+        }
+        for index, claim in enumerate(claims)
+        if not all(contains_han(value) for value in (claim.neutral_statement, claim.caveat, claim.counter_reading))
+    ]
+    if pending:
+        prompt = """You are a translation layer, not an interpreter. Translate every supplied text field into
+concise Simplified Chinese while retaining necessary technical terms and exactly preserving scope,
+uncertainty, negation, and modality. Add no facts, advice, metaphor, or explanation.
+Return JSON only: {"translations":[{"index":0,"neutral_statement":"...","caveat":"...","counter_reading":"..."}]}.
+Do not reveal chain-of-thought."""
+        payload = {
+            "model": request_model or os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash"),
+            "messages": [
+                {"role": "system", "content": prompt},
+                {"role": "user", "content": json.dumps(pending, ensure_ascii=False)},
+            ],
+            "response_format": {"type": "json_object"},
+            "thinking": {"type": "disabled"},
+            "temperature": 0,
+            "max_tokens": 2200,
+            "stream": False,
+        }
+        try:
+            body = await call_json(payload, api_key)
+            for item in body.get("translations", []):
+                index = item.get("index")
+                if not isinstance(index, int) or not 0 <= index < len(claims):
+                    continue
+                neutral = bounded_input(item.get("neutral_statement"), 1600)
+                caveat = bounded_input(item.get("caveat"), 500)
+                counter = bounded_input(item.get("counter_reading"), 500)
+                if contains_han(neutral):
+                    claims[index].neutral_statement = neutral
+                    claims[index].statement = neutral
+                if contains_han(caveat):
+                    claims[index].caveat = caveat
+                if contains_han(counter):
+                    claims[index].counter_reading = counter
+        except (HTTPError, URLError, TimeoutError, KeyError, TypeError, json.JSONDecodeError):
+            pass
+    for claim in claims:
+        claim.caveat = bounded_chinese_text(claim.caveat, "未提供额外限制条件。")
+        claim.counter_reading = bounded_chinese_text(claim.counter_reading, "未提供反向解读。")
+    return claims
 
 
 async def extract_facts_only(
@@ -251,7 +458,7 @@ async def style_claims(
     """Apply voice without giving the style pass access to chart facts or other chambers."""
     system = f"""{persona_instructions(system_id)}
 
-You are a voice framer, not an interpreter. Keep each neutral_statement as an exact,
+You are a voice framer, not an interpreter. Write framing in Simplified Chinese only. Keep each neutral_statement as an exact,
 unchanged, continuous substring. You may add one short in-character lead-in around it.
 Do not paraphrase, add, remove, intensify, weaken, explain, or infer factual content.
 Keep uncertainty and conditional language. Return JSON only:
@@ -285,10 +492,12 @@ If safe framing is not possible, repeat the neutral statement exactly."""
             styled[index] = statement.strip()
     for index, claim in enumerate(claims):
         candidate = styled.get(index, "")
+        framing = candidate.replace(claim.neutral_statement, "", 1).strip() if claim.neutral_statement in candidate else ""
         if (
             candidate
             and claim.neutral_statement in candidate
             and len(candidate) <= len(claim.neutral_statement) + 120
+            and (not framing or contains_han(framing))
         ):
             claim.statement = candidate
     return claims
@@ -318,6 +527,11 @@ def bounded_text(value: object) -> str:
     if not isinstance(value, str) or not value.strip():
         return "No additional limitation supplied."
     return value.strip()[:500]
+
+
+def bounded_chinese_text(value: object, fallback: str) -> str:
+    bounded = bounded_text(value)
+    return bounded if contains_han(bounded) else fallback
 
 
 def bounded_input(value: object, limit: int) -> str:

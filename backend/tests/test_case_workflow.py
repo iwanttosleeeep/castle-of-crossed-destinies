@@ -109,6 +109,26 @@ class WorkflowApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("deliberately not persisted", serialized)
         self.assertEqual(restored["extractions"]["bazi"]["facts"][0]["value"], "甲木")
 
+    async def test_ai_readable_text_uses_deterministic_parser_without_api_call(self):
+        created = await main.create_case(
+            CaseCreateRequest(profile=BirthProfile.model_validate(PROFILE), systems=["western"])
+        )
+        source = b"""[PLANET_POSITIONS]\nobject | sign | longitude | house | motion\nSun | Sagittarius | 15 degrees | 10 | direct\n"""
+        mocked_extract = AsyncMock()
+        with patch("backend.app.main.extract_facts_only", mocked_extract):
+            response = await main.upload_source(
+                created["case_id"],
+                "western",
+                UploadFile(file=BytesIO(source), filename="astro_ai_readable.txt"),
+                created["resume_token"],
+                None,
+                "deepseek-v4-flash",
+            )
+
+        mocked_extract.assert_not_awaited()
+        self.assertEqual(response["extraction_engine"], "structured_text")
+        self.assertEqual(response["facts"][0]["label"], "PLANET_POSITIONS · Sun")
+
     async def test_parallel_uploads_do_not_overwrite_each_other(self):
         created = await main.create_case(
             CaseCreateRequest(profile=BirthProfile.model_validate(PROFILE), systems=["bazi", "western"])

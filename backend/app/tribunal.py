@@ -36,6 +36,7 @@ async def run_tribunal(
         for claim in claims
     }
     prompt = """You are the neutral Tribunal. You receive independent, neutral claims only.
+Write every human-readable output field in Simplified Chinese.
 Cluster claims that address the same proposition, not merely the same broad theme. Classify each cluster as:
 genuine_convergence (different systems, specific compatible propositions), apparent_convergence (similar but generic/Barnum wording), direct_conflict (incompatible answers to the same question), different_emphasis (compatible but focused on different aspects), or uncomparable (different time scales/concepts).
 Never decide which divination system is true. Do not create new claims. Use only supplied claim_ids.
