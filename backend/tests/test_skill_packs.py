@@ -114,9 +114,8 @@ class ChamberRunnerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(payload["model"], "deepseek-v4-pro")
         self.assertEqual(mocked_call.await_count, 2)
         prompt = payload["messages"][0]["content"]
-        self.assertIn("PERMITTED EVIDENCE IDS", prompt)
-        self.assertIn("PERMITTED RULE IDS", prompt)
-        self.assertIn("SUGGESTED RULE IDS BY EVIDENCE ID", prompt)
+        self.assertIn("FACT DOSSIER", prompt)
+        self.assertIn("ADMISSIBLE SUPPORT PAIRS", prompt)
         self.assertIn("WEST-PLANET-SUN", prompt)
         self.assertIn("single explicit fact", prompt)
 
@@ -210,8 +209,7 @@ class ChamberRunnerTests(unittest.IsolatedAsyncioTestCase):
                 {
                     "neutral_statement": "太阳这一明确位置可在西占内部谨慎地讨论自我组织与可见性，但不能单独定义整个人格。",
                     "themes": "identity",
-                    "evidence_ids": "western.sun-1",
-                    "rule_ids": "west-planet-sun",
+                    "support_ids": "s1",
                     "caveat": "缺少宫位与相位上下文。",
                     "counter_reading": "其他行星配置可能改变表达重心。",
                     "confidence": 0.42,
