@@ -64,14 +64,27 @@ async def run_chamber_skill(
     allowed_ids = {fact.id for fact in facts}
     instructions = skill_instructions(system_id)
     allowed_rule_ids = set(RULE_PATTERN.findall(instructions))
+    permitted_references = f"""PERMITTED EVIDENCE IDS (copy exactly):
+{json.dumps(sorted(allowed_ids), ensure_ascii=False)}
+
+PERMITTED RULE IDS (copy exactly):
+{json.dumps(sorted(allowed_rule_ids), ensure_ascii=False)}
+
+PERMITTED THEME IDS (copy exactly):
+{json.dumps(sorted(THEMES), ensure_ascii=False)}"""
     system = f"""{instructions}
 
 Return JSON only, using exactly this shape:
 {{"claims":[{{"neutral_statement":"plain evidence-bound interpretation","themes":["one_to_three_controlled_themes"],"evidence_ids":["fact.id"],"rule_ids":["PERMITTED-RULE-ID"],"caveat":"material limitation","counter_reading":"factor that could weaken this reading","confidence":0.0,"specificity":0.0,"barnum_risk":0.0}}]}}
-Use only fact ids in the dossier and rule ids printed in the instructions. Produce up to nine claims,
-covering distinct controlled themes when the dossier supports them. Do not fill a theme without evidence.
-Return no claims if evidence is insufficient. Do not use a persona or decorative voice in this pass.
-Do not reveal chain-of-thought."""
+{permitted_references}
+
+Write concise neutral statements in Chinese while preserving technical terms. Interpret rather than
+merely restating the dossier. Aim for 4–7 distinct useful claims when the dossier is rich, or 2–4 when
+only 1–3 primary symbols are supplied. A single explicit fact plus a directly matching rule is enough
+for one narrow conditional claim at low confidence. Missing secondary context belongs in caveat and
+counter_reading; it is not automatic grounds for silence. Return no claims only when no supplied fact
+matches any permitted rule. Do not force every theme, calculate missing data, use a persona, or reveal
+chain-of-thought."""
     dossier = [{"id": fact.id, "label": fact.label, "value": fact.value, "time_sensitive": fact.time_sensitive} for fact in facts]
     payload = {
         "model": request_model or os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash"),
@@ -86,13 +99,49 @@ Do not reveal chain-of-thought."""
         body = await call_json(payload, api_key)
     except (HTTPError, URLError, TimeoutError, KeyError, TypeError, json.JSONDecodeError) as exc:
         return [], f"DeepSeek chamber 未完成：{type(exc).__name__}。"
+    claims = validated_claims(system_id, body, allowed_ids, allowed_rule_ids)
+    if not claims and facts:
+        retry_payload = {
+            **payload,
+            "messages": payload["messages"] + [
+                {"role": "assistant", "content": json.dumps(body, ensure_ascii=False)},
+                {
+                    "role": "user",
+                    "content": f"""The first answer produced no admissible claims. Try once more.
+Use only the exact IDs below. Produce 2–5 narrow conditional interpretations. Do not merely restate
+facts, and do not calculate or invent missing chart data. A direct fact plus its matching lexicon rule
+is sufficient; put missing context in caveat and keep confidence at or below 0.45 when isolated.
+
+{permitted_references}""",
+                },
+            ],
+        }
+        try:
+            repaired_body = await call_json(retry_payload, api_key)
+            claims = validated_claims(system_id, repaired_body, allowed_ids, allowed_rule_ids)
+        except (HTTPError, URLError, TimeoutError, KeyError, TypeError, json.JSONDecodeError):
+            claims = []
+    if claims:
+        claims = await style_claims(system_id, claims, api_key, request_model)
+        return claims, None
+    return [], f"本室收到 {len(facts)} 条已确认事实，但两次生成都没有形成通过证据、规则与主题校验的解读；可以重新生成。"
+
+
+def validated_claims(
+    system_id: str,
+    body: dict,
+    allowed_ids: set[str],
+    allowed_rule_ids: set[str],
+) -> list[Claim]:
     claims: list[Claim] = []
     for index, item in enumerate(body.get("claims", [])[:9], start=1):
-        evidence_ids = [fact_id for fact_id in item.get("evidence_ids", []) if fact_id in allowed_ids]
-        rule_ids = [rule_id for rule_id in item.get("rule_ids", []) if rule_id in allowed_rule_ids]
+        if not isinstance(item, dict):
+            continue
+        evidence_ids = validated_references(item.get("evidence_ids"), allowed_ids)
+        rule_ids = validated_references(item.get("rule_ids"), allowed_rule_ids, uppercase=True)
         neutral = item.get("neutral_statement")
-        themes = [str(theme) for theme in item.get("themes", []) if theme in THEMES][:3]
-        if not evidence_ids or not rule_ids or not isinstance(neutral, str) or not neutral.strip():
+        themes = validated_references(item.get("themes"), THEMES)[:3]
+        if not evidence_ids or not rule_ids or not themes or not isinstance(neutral, str) or not neutral.strip():
             continue
         neutral = neutral.strip()
         claims.append(
@@ -111,9 +160,22 @@ Do not reveal chain-of-thought."""
                 barnum_risk=clamp(item.get("barnum_risk")),
             )
         )
-    if claims:
-        claims = await style_claims(system_id, claims, api_key, request_model)
-    return claims, None
+    return claims
+
+
+def validated_references(value: object, allowed: set[str], uppercase: bool = False) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    valid = []
+    for item in value:
+        if not isinstance(item, str):
+            continue
+        candidate = item.strip().strip("`'\"")
+        if uppercase:
+            candidate = candidate.upper()
+        if candidate in allowed and candidate not in valid:
+            valid.append(candidate)
+    return valid
 
 
 async def extract_facts_only(

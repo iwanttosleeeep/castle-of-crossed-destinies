@@ -107,11 +107,16 @@ class ChamberRunnerTests(unittest.IsolatedAsyncioTestCase):
                     request_model="deepseek-v4-pro",
                 )
 
-        self.assertIsNone(warning)
+        self.assertIn("两次生成", warning)
         self.assertEqual(claims, [])
-        payload, api_key = mocked_call.await_args.args
+        payload, api_key = mocked_call.await_args_list[0].args
         self.assertEqual(api_key, "visitor-key")
         self.assertEqual(payload["model"], "deepseek-v4-pro")
+        self.assertEqual(mocked_call.await_count, 2)
+        prompt = payload["messages"][0]["content"]
+        self.assertIn("PERMITTED EVIDENCE IDS", prompt)
+        self.assertIn("PERMITTED RULE IDS", prompt)
+        self.assertIn("single explicit fact", prompt)
 
     async def test_persona_pass_cannot_replace_neutral_testimony(self):
         neutral_response = {
@@ -183,9 +188,50 @@ class ChamberRunnerTests(unittest.IsolatedAsyncioTestCase):
                     [Fact(id="western.sun-1", label="Sun", value="Aries")],
                 )
 
-        self.assertIsNone(warning)
+        self.assertIn("两次生成", warning)
         self.assertEqual(claims, [])
-        self.assertEqual(mocked_call.await_count, 1)
+        self.assertEqual(mocked_call.await_count, 2)
+
+    async def test_empty_or_invalid_first_pass_gets_one_grounded_retry(self):
+        invalid_response = {
+            "claims": [
+                {
+                    "neutral_statement": "This candidate uses invalid references.",
+                    "themes": ["identity"],
+                    "evidence_ids": ["western.missing"],
+                    "rule_ids": ["WEST-INVENTED-999"],
+                }
+            ]
+        }
+        repaired_response = {
+            "claims": [
+                {
+                    "neutral_statement": "太阳这一明确位置可在西占内部谨慎地讨论自我组织与可见性，但不能单独定义整个人格。",
+                    "themes": ["identity_orientation"],
+                    "evidence_ids": ["western.sun-1"],
+                    "rule_ids": ["west-planet-sun"],
+                    "caveat": "缺少宫位与相位上下文。",
+                    "counter_reading": "其他行星配置可能改变表达重心。",
+                    "confidence": 0.42,
+                    "specificity": 0.5,
+                    "barnum_risk": 0.45,
+                }
+            ]
+        }
+        style_response = {"statements": []}
+        mocked_call = AsyncMock(side_effect=[invalid_response, repaired_response, style_response])
+        with patch("backend.app.deepseek.call_json", mocked_call):
+            claims, warning = await run_chamber_skill(
+                "western",
+                [Fact(id="western.sun-1", label="Sun", value="Sagittarius")],
+                request_api_key="visitor-key",
+            )
+
+        self.assertIsNone(warning)
+        self.assertEqual(len(claims), 1)
+        self.assertEqual(claims[0].rule_ids, ["WEST-PLANET-SUN"])
+        self.assertEqual(claims[0].themes, ["identity_orientation"])
+        self.assertEqual(mocked_call.await_count, 3)
 
     async def test_persona_rewrite_that_drops_neutral_text_is_rejected(self):
         neutral_response = {

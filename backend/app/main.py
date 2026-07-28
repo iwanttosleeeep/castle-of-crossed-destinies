@@ -181,7 +181,11 @@ async def create_reports(
             "system_id": system,
             "display_name": SYSTEMS[system],
             "claims": [claim.model_dump(mode="json") for claim in claims],
-            "sections": {theme: [claim.id for claim in claims if theme in claim.themes] for theme in sorted(THEMES)},
+            "sections": {
+                theme: [claim.id for claim in claims if theme in claim.themes]
+                for theme in sorted(THEMES)
+                if any(theme in claim.themes for claim in claims)
+            },
             "abstentions": [theme for theme in sorted(THEMES) if theme not in covered],
             "warning": warning,
         }

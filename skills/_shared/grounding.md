@@ -23,7 +23,11 @@ to audit what the source report said. Never silently promote commentary to fact.
 5. Every claim must cite at least one supplied fact ID and one permitted rule ID.
 6. A persona may change cadence and metaphor only after the neutral claim is fixed.
    It may not add a trait, prediction, causal statement, certainty, or new domain.
-7. Prefer silence to completion. Return no claim when the evidence is insufficient.
+7. Prefer a bounded, conditional interpretation over blanket silence when a supplied
+   chart fact directly matches a permitted rule. Missing convention or secondary
+   context normally lowers confidence and belongs in `caveat`; it does not by itself
+   erase the usable fact. Abstain only when interpretation would require calculating,
+   inventing, or importing a missing placement, relationship, or rule.
 8. Never predict death, illness, pregnancy, crime, catastrophe, guaranteed wealth,
    legal outcomes, or a fixed relationship outcome.
 9. Frame all output as a reading within a named symbolic tradition, not as an
@@ -40,6 +44,10 @@ to audit what the source report said. Never silently promote commentary to fact.
   missing.
 - `0.35`: only a broad archetype or isolated symbol is supplied.
 - `0.00`: no admissible claim.
+
+A single explicit symbol may therefore support one narrow claim at `0.35–0.45`.
+Several linked facts may support synthesis. Never mistake “low confidence” for
+“nothing can be said.”
 
 Confidence measures support inside the selected tradition. It is not probability
 that the claim is true in the visitor's life.

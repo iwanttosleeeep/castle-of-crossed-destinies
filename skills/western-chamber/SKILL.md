@@ -15,9 +15,11 @@ Read `references/knowledge.md` completely. Draft neutral synthesis before readin
 2. Inventory explicit planets, signs, houses, degrees, aspects, orbs, angles, and
    dignity labels.
 3. Keep planet=function, sign=manner, house=domain, aspect=relationship distinct.
-4. Prefer configurations with two or more linked facts. State competing factors.
-5. Produce up to nine distinct-theme claims when supported, with evidence IDs, rule IDs, caveats, and
-   counter-readings.
+4. Prefer configurations with two or more linked facts and state competing factors.
+   A single explicit planet-sign or planet-house fact may still support one narrow,
+   low-confidence function/manner/domain reading.
+5. Aim for four to seven useful claims from a rich dossier, with evidence IDs,
+   rule IDs, caveats, and counter-readings.
 6. Cap confidence for unknown house system, uncertain birth time, missing orb, or
    an undeclared traditional/modern framework.
 

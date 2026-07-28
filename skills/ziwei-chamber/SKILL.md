@@ -16,7 +16,9 @@ first. Read `references/persona.md` only after evidence and rule IDs are fixed.
 3. Interpret a star through its palace and supplied modifiers; avoid single-star
    verdicts.
 4. Name internal tension before producing a cross-system theme.
-5. Produce up to nine distinct-theme claims when supported, with explicit layer labels: natal, 大限, or 流年.
+5. Aim for four to seven useful claims from a rich dossier, with explicit layer
+   labels: natal, 大限, or 流年. A supplied palace-plus-star pairing is enough for one
+   narrow domain reading; absent 三方四正 lowers confidence rather than erasing it.
 6. Cap confidence when the school, palace, transformations, or time layer is unclear.
 
 ## Refuse or abstain

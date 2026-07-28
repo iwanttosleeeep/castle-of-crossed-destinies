@@ -16,8 +16,9 @@ before applying the restrained voice in `references/persona.md`.
 3. Interpret Tone as process and Seal as symbolic action/quality; combine them only
    when both are present.
 4. State the modern provenance once in every report.
-5. Produce up to nine distinct-theme claims when supported, with evidence IDs, rule IDs, caveats, and
-   counter-readings.
+5. With Tone and Seal supplied, produce two to four useful claims by reading each
+   symbol and their combination. Missing Wavespell, Castle, or oracle relations
+   lowers scope and confidence but does not block the supplied Tone/Seal reading.
 6. Cap confidence when only a Kin number is supplied without its computed components
    or when the source conflates Dreamspell with a Maya day count.
 
