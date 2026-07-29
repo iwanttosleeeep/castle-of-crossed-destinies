@@ -576,6 +576,26 @@ async def call_json(payload: dict, api_key: str) -> dict:
     raise last_error
 
 
+async def call_text(payload: dict, api_key: str) -> str:
+    """Return natural-language model content without imposing JSON Output."""
+    last_error: Exception | None = None
+    for attempt in range(4):
+        try:
+            response = await asyncio.to_thread(post_json, payload, api_key)
+            content = response["choices"][0]["message"]["content"]
+            if not isinstance(content, str) or not content.strip():
+                raise ValueError("empty text content")
+            return content.strip()
+        except (HTTPError, URLError, TimeoutError, KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            last_error = exc
+            if isinstance(exc, HTTPError) and exc.code not in {408, 409, 425, 429, 500, 502, 503, 504}:
+                break
+            if attempt < 3:
+                await asyncio.sleep(0.8 * (2**attempt))
+    assert last_error is not None
+    raise last_error
+
+
 def bounded_text(value: object) -> str:
     if not isinstance(value, str) or not value.strip():
         return "No additional limitation supplied."

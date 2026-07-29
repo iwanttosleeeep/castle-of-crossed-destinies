@@ -180,6 +180,46 @@ class WorkflowApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(extraction["facts"][0]["label"], "四柱")
         self.assertEqual(deepseek_extract.await_args.args[1], local_text)
 
+    async def test_free_reports_bypass_grounded_skills_and_json_claims(self):
+        created = await main.create_case(
+            CaseCreateRequest(profile=BirthProfile(), systems=["bazi", "ziwei"])
+        )
+        for system_id in ("bazi", "ziwei"):
+            await main.confirm_facts(
+                created["case_id"],
+                system_id,
+                main.FactConfirmation(
+                    facts=[Fact(id=f"{system_id}.fact-1", label="盘面", value=f"{system_id} 已确认资料")]
+                ),
+                created["resume_token"],
+            )
+
+        async def free_chamber(system_id, *_args, **_kwargs):
+            return f"{system_id} 的自然语言报告", None
+
+        grounded = AsyncMock()
+        grounded_tribunal = AsyncMock()
+        with patch("backend.app.main.run_free_chamber", new=free_chamber), patch(
+            "backend.app.main.run_free_tribunal",
+            new=AsyncMock(return_value=("自由 Tribunal", None)),
+        ), patch("backend.app.main.run_chamber_skill", grounded), patch(
+            "backend.app.main.run_tribunal", grounded_tribunal
+        ):
+            assembled = await main.create_reports(
+                created["case_id"],
+                created["resume_token"],
+                "request-key",
+                "deepseek-v4-flash",
+                "free",
+            )
+
+        grounded.assert_not_awaited()
+        grounded_tribunal.assert_not_awaited()
+        self.assertEqual(assembled["report_mode"], "free")
+        self.assertEqual(assembled["reports"]["bazi"]["claims"], [])
+        self.assertEqual(assembled["reports"]["ziwei"]["free_text"], "ziwei 的自然语言报告")
+        self.assertEqual(assembled["tribunal"]["summary"], "自由 Tribunal")
+
 
 class TribunalScoreTests(unittest.TestCase):
     def test_agreement_score_penalizes_barnum_risk(self):
