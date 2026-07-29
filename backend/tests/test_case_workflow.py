@@ -220,6 +220,27 @@ class WorkflowApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(assembled["reports"]["ziwei"]["free_text"], "ziwei 的自然语言报告")
         self.assertEqual(assembled["tribunal"]["summary"], "自由 Tribunal")
 
+        guided = AsyncMock(return_value=("有人格约束的报告", None))
+        pure = AsyncMock()
+        with patch("backend.app.main.run_guided_chamber", guided), patch(
+            "backend.app.main.run_free_chamber", pure
+        ), patch(
+            "backend.app.main.run_free_tribunal",
+            new=AsyncMock(return_value=("轻量 Tribunal", None)),
+        ):
+            assembled = await main.create_reports(
+                created["case_id"],
+                created["resume_token"],
+                "request-key",
+                "deepseek-v4-flash",
+                "guided",
+            )
+
+        self.assertEqual(guided.await_count, 2)
+        pure.assert_not_awaited()
+        self.assertEqual(assembled["report_mode"], "guided")
+        self.assertEqual(assembled["reports"]["bazi"]["mode"], "guided")
+
 
 class TribunalScoreTests(unittest.TestCase):
     def test_agreement_score_penalizes_barnum_risk(self):

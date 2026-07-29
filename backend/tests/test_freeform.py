@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from backend.app.freeform import clean_text_response, run_free_chamber, run_free_tribunal
+from backend.app.freeform import clean_text_response, run_free_chamber, run_free_tribunal, run_guided_chamber
 from backend.app.schemas import Fact
 
 
@@ -43,6 +43,23 @@ class FreeformTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertIsNone(warning)
         self.assertIn("具体共识", text)
+        self.assertNotIn("response_format", call.await_args.args[0])
+
+    async def test_guided_chamber_loads_only_compact_skill_and_selected_persona(self):
+        fact = Fact(id="ziwei.fact-1", label="命宫", value="武曲 天相", time_sensitive=True)
+        call = AsyncMock(return_value="## 宫阙录事\n本宫呈现的是一种配置。")
+
+        with patch("backend.app.freeform.call_text", call):
+            text, warning = await run_guided_chamber(
+                "ziwei", "Zi Wei Dou Shu", [fact], "request-key", "deepseek-v4-flash"
+            )
+
+        self.assertIsNone(warning)
+        self.assertIn("宫阙录事", text)
+        system_prompt = call.await_args.args[0]["messages"][0]["content"]
+        self.assertIn("The Palace Registrar", system_prompt)
+        self.assertIn("compact hallucination safeguards", system_prompt)
+        self.assertNotIn("ZIWEI-STAR-WQ", system_prompt)
         self.assertNotIn("response_format", call.await_args.args[0])
 
     def test_outer_code_fence_is_removed(self):

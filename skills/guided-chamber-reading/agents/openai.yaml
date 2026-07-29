@@ -1,0 +1,4 @@
+interface:
+  display_name: "Guided Chamber Reading"
+  short_description: "Persona-led readings with compact hallucination safeguards"
+  default_prompt: "Use $guided-chamber-reading to write a vivid symbolic reading grounded only in confirmed chart facts."

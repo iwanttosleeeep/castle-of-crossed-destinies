@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .debate import run_debate
 from .deepseek import THEMES, extract_facts_only, run_chamber_skill
 from .files import extract_bytes, read_upload
-from .freeform import run_free_chamber, run_free_tribunal
+from .freeform import run_free_chamber, run_free_tribunal, run_guided_chamber
 from .providers import SYSTEMS
 from .schemas import CaseCreateRequest, DebateRequest, Fact, FactConfirmation
 from .store import CaseStore
@@ -19,7 +19,7 @@ from .tribunal import run_tribunal
 store: CaseStore | None = None
 case_write_lock = asyncio.Lock()
 ALLOWED_MODELS = {"deepseek-v4-flash", "deepseek-v4-pro"}
-ALLOWED_REPORT_MODES = {"free", "grounded"}
+ALLOWED_REPORT_MODES = {"free", "guided", "grounded"}
 
 
 @asynccontextmanager
@@ -177,10 +177,11 @@ async def create_reports(
         for system in payload["systems"]
     }
     facts_snapshot = payload["confirmed_facts"]
-    if selected_mode == "free":
+    if selected_mode in {"free", "guided"}:
+        chamber_runner = run_guided_chamber if selected_mode == "guided" else run_free_chamber
         results = await asyncio.gather(
             *(
-                run_free_chamber(system, SYSTEMS[system], facts_by_system[system], deepseek_key, deepseek_model)
+                chamber_runner(system, SYSTEMS[system], facts_by_system[system], deepseek_key, deepseek_model)
                 for system in payload["systems"]
             )
         )
@@ -195,7 +196,7 @@ async def create_reports(
             reports[system] = {
                 "system_id": system,
                 "display_name": SYSTEMS[system],
-                "mode": "free",
+                "mode": selected_mode,
                 "free_text": free_text,
                 "claims": [],
                 "sections": {},
@@ -204,11 +205,11 @@ async def create_reports(
             }
         tribunal_text, tribunal_warning = await run_free_tribunal(free_texts, deepseek_key, deepseek_model)
         tribunal = {
-            "mode": "free",
+            "mode": selected_mode,
             "findings": [],
             "summary": tribunal_text,
             "counts": {},
-            "disclaimer": "自由实验模式没有逐条 Evidence/Rule 审计；结果仅供比较叙事，不代表准确或真实。",
+            "disclaimer": "自然语言模式没有逐条 Evidence/Rule 审计；结果仅供比较叙事，不代表准确或真实。",
         }
     else:
         results = await asyncio.gather(
@@ -264,8 +265,8 @@ async def create_debate(
     validate_model(deepseek_model)
     if not payload.get("reports"):
         raise HTTPException(409, "请先生成七份 general reports")
-    if payload.get("report_mode") == "free":
-        raise HTTPException(409, "自由实验模式暂不执行结构化交叉质询；请切换 Grounded Skills 模式重新生成后再提问")
+    if payload.get("report_mode") in {"free", "guided"}:
+        raise HTTPException(409, "自然语言模式暂不执行结构化交叉质询；请切换 Grounded Skills 模式重新生成后再提问")
     facts_by_system = {
         system: [Fact.model_validate(item) for item in items]
         for system, items in payload["confirmed_facts"].items()
