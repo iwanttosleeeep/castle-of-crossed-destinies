@@ -10,26 +10,15 @@ from unittest.mock import AsyncMock, patch
 from fastapi import HTTPException, UploadFile
 
 from backend.app import main
-from backend.app.schemas import BirthProfile, CaseCreateRequest, DebateRequest, Fact
+from backend.app.schemas import CaseCreateRequest, DebateRequest, Fact
 from backend.app.store import CaseStore
-from backend.app.tribunal import agreement_score
-
-
-PROFILE = {
-    "display_name": "Visitor",
-    "birth_date": "2000-01-02",
-    "birth_time": "12:30:00",
-    "birthplace_text": "Shanghai, China",
-    "timezone_name": "Asia/Shanghai",
-    "time_precision": "exact",
-}
 
 
 class CaseStoreTests(unittest.TestCase):
     def test_resume_token_is_hashed_and_required(self):
         with tempfile.TemporaryDirectory() as directory:
             store = CaseStore(Path(directory) / "cases.db")
-            payload, token = store.create(PROFILE, ["bazi"])
+            payload, token = store.create(["bazi"])
             self.assertIsNotNone(store.get(payload["case_id"], token))
             self.assertIsNone(store.get(payload["case_id"], "wrong-token"))
             with closing(store._connect()) as connection:
@@ -50,9 +39,7 @@ class WorkflowApiTests(unittest.IsolatedAsyncioTestCase):
         self.temporary.cleanup()
 
     async def create_case(self):
-        return await main.create_case(
-            CaseCreateRequest(profile=BirthProfile.model_validate(PROFILE), systems=["bazi"])
-        )
+        return await main.create_case(CaseCreateRequest(systems=["bazi"]))
 
     async def test_case_can_be_created_and_restored(self):
         created = await self.create_case()
@@ -62,22 +49,9 @@ class WorkflowApiTests(unittest.IsolatedAsyncioTestCase):
             await main.restore_case(created["case_id"], "wrong")
         self.assertEqual(denied.exception.status_code, 404)
 
-    async def test_case_profile_fields_are_all_optional(self):
-        created = await main.create_case(
-            CaseCreateRequest(profile=BirthProfile(), systems=["bazi"])
-        )
-        self.assertEqual(
-            created["profile"],
-            {
-                "display_name": None,
-                "birth_date": None,
-                "birth_time": None,
-                "birthplace_text": None,
-                "timezone_name": None,
-                "time_precision": "unknown",
-                "gender_marker": None,
-            },
-        )
+    async def test_case_has_no_personal_profile(self):
+        created = await main.create_case(CaseCreateRequest(systems=["bazi"]))
+        self.assertNotIn("profile", created)
 
     async def test_text_upload_only_saves_extracted_facts_not_raw_file(self):
         created = await self.create_case()
@@ -110,9 +84,7 @@ class WorkflowApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(restored["extractions"]["bazi"]["facts"][0]["value"], "甲木")
 
     async def test_ai_readable_text_uses_deterministic_parser_without_api_call(self):
-        created = await main.create_case(
-            CaseCreateRequest(profile=BirthProfile.model_validate(PROFILE), systems=["western"])
-        )
+        created = await main.create_case(CaseCreateRequest(systems=["western"]))
         source = b"""[PLANET_POSITIONS]\nobject | sign | longitude | house | motion\nSun | Sagittarius | 15 degrees | 10 | direct\n"""
         mocked_extract = AsyncMock()
         with patch("backend.app.main.extract_facts_only", mocked_extract):
@@ -130,9 +102,7 @@ class WorkflowApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response["facts"][0]["label"], "PLANET_POSITIONS · Sun")
 
     async def test_parallel_uploads_do_not_overwrite_each_other(self):
-        created = await main.create_case(
-            CaseCreateRequest(profile=BirthProfile.model_validate(PROFILE), systems=["bazi", "western"])
-        )
+        created = await main.create_case(CaseCreateRequest(systems=["bazi", "western"]))
 
         async def fake_extract(system_id, *_args, **_kwargs):
             return [Fact(id=f"{system_id}.fact-1", label="Marker", value=system_id)], [], None
@@ -180,10 +150,8 @@ class WorkflowApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(extraction["facts"][0]["label"], "四柱")
         self.assertEqual(deepseek_extract.await_args.args[1], local_text)
 
-    async def test_free_reports_bypass_grounded_skills_and_json_claims(self):
-        created = await main.create_case(
-            CaseCreateRequest(profile=BirthProfile(), systems=["bazi", "ziwei"])
-        )
+    async def test_guided_reports_and_hearing_are_the_only_active_path(self):
+        created = await main.create_case(CaseCreateRequest(systems=["bazi", "ziwei"]))
         for system_id in ("bazi", "ziwei"):
             await main.confirm_facts(
                 created["case_id"],
@@ -194,38 +162,9 @@ class WorkflowApiTests(unittest.IsolatedAsyncioTestCase):
                 created["resume_token"],
             )
 
-        async def free_chamber(system_id, *_args, **_kwargs):
-            return f"{system_id} 的自然语言报告", None
-
-        grounded = AsyncMock()
-        grounded_tribunal = AsyncMock()
-        with patch("backend.app.main.run_free_chamber", new=free_chamber), patch(
-            "backend.app.main.run_free_tribunal",
-            new=AsyncMock(return_value=("自由 Tribunal", None)),
-        ), patch("backend.app.main.run_chamber_skill", grounded), patch(
-            "backend.app.main.run_tribunal", grounded_tribunal
-        ):
-            assembled = await main.create_reports(
-                created["case_id"],
-                created["resume_token"],
-                "request-key",
-                "deepseek-v4-flash",
-                "free",
-            )
-
-        grounded.assert_not_awaited()
-        grounded_tribunal.assert_not_awaited()
-        self.assertEqual(assembled["report_mode"], "free")
-        self.assertEqual(assembled["reports"]["bazi"]["claims"], [])
-        self.assertEqual(assembled["reports"]["ziwei"]["free_text"], "ziwei 的自然语言报告")
-        self.assertEqual(assembled["tribunal"]["summary"], "自由 Tribunal")
-
         guided = AsyncMock(return_value=("有人格约束的报告", None))
-        pure = AsyncMock()
         with patch("backend.app.main.run_guided_chamber", guided), patch(
-            "backend.app.main.run_free_chamber", pure
-        ), patch(
-            "backend.app.main.run_free_tribunal",
+            "backend.app.main.run_guided_tribunal",
             new=AsyncMock(return_value=("轻量 Tribunal", None)),
         ):
             assembled = await main.create_reports(
@@ -233,13 +172,12 @@ class WorkflowApiTests(unittest.IsolatedAsyncioTestCase):
                 created["resume_token"],
                 "request-key",
                 "deepseek-v4-flash",
-                "guided",
             )
 
         self.assertEqual(guided.await_count, 2)
-        pure.assert_not_awaited()
-        self.assertEqual(assembled["report_mode"], "guided")
-        self.assertEqual(assembled["reports"]["bazi"]["mode"], "guided")
+        self.assertEqual(assembled["reports"]["bazi"]["text"], "有人格约束的报告")
+        self.assertNotIn("claims", assembled["reports"]["bazi"])
+        self.assertEqual(assembled["tribunal"]["summary"], "轻量 Tribunal")
 
         guided_hearing = {
             "mode": "guided",
@@ -252,11 +190,10 @@ class WorkflowApiTests(unittest.IsolatedAsyncioTestCase):
             "guided_rebuttals": [],
             "guided_summary": "总结",
         }
-        grounded_debate = AsyncMock()
         with patch(
             "backend.app.main.run_guided_debate",
             new=AsyncMock(return_value=(guided_hearing, None)),
-        ) as guided_debate, patch("backend.app.main.run_debate", grounded_debate):
+        ) as guided_debate:
             hearing = await main.create_debate(
                 created["case_id"],
                 DebateRequest(question="职业选择怎么看？"),
@@ -266,19 +203,8 @@ class WorkflowApiTests(unittest.IsolatedAsyncioTestCase):
             )
 
         guided_debate.assert_awaited_once()
-        grounded_debate.assert_not_awaited()
         self.assertEqual(hearing["mode"], "guided")
         self.assertEqual(hearing["id"], "hearing-1")
-
-
-class TribunalScoreTests(unittest.TestCase):
-    def test_agreement_score_penalizes_barnum_risk(self):
-        specific = [
-            {"system_id": "bazi", "specificity": 0.9, "barnum_risk": 0.1},
-            {"system_id": "western", "specificity": 0.9, "barnum_risk": 0.1},
-        ]
-        generic = [item | {"barnum_risk": 0.9} for item in specific]
-        self.assertGreater(agreement_score(specific), agreement_score(generic))
 
 
 if __name__ == "__main__":

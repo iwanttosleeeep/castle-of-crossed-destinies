@@ -5,22 +5,19 @@ from typing import Annotated
 from fastapi import FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
-from .debate import run_debate
-from .deepseek import THEMES, extract_facts_only, run_chamber_skill
+from .deepseek import extract_facts_only
 from .files import extract_bytes, read_upload
-from .freeform import run_free_chamber, run_free_tribunal, run_guided_chamber
 from .guided_debate import run_guided_debate
+from .guided_reports import run_guided_chamber, run_guided_tribunal
 from .providers import SYSTEMS
 from .schemas import CaseCreateRequest, DebateRequest, Fact, FactConfirmation
 from .store import CaseStore
 from .structured import extract_structured_facts
-from .tribunal import run_tribunal
 
 
 store: CaseStore | None = None
 case_write_lock = asyncio.Lock()
 ALLOWED_MODELS = {"deepseek-v4-flash", "deepseek-v4-pro"}
-ALLOWED_REPORT_MODES = {"free", "guided", "grounded"}
 
 
 @asynccontextmanager
@@ -41,13 +38,13 @@ app.add_middleware(
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "engine": "deterministic structured text + local PDF text + DeepSeek skills", "chambers": list(SYSTEMS)}
+    return {"status": "ok", "engine": "confirmed facts + lightweight persona skills", "chambers": list(SYSTEMS)}
 
 
 @app.post("/cases")
 async def create_case(request: CaseCreateRequest):
     selected = validate_systems(request.systems)
-    payload, token = get_store().create(request.profile.model_dump(mode="json"), selected)
+    payload, token = get_store().create(selected)
     return public_case(payload) | {"resume_token": token}
 
 
@@ -165,11 +162,9 @@ async def create_reports(
     case_token: Annotated[str | None, Header(alias="X-Case-Token")] = None,
     deepseek_key: Annotated[str | None, Header(alias="X-DeepSeek-Key")] = None,
     deepseek_model: Annotated[str | None, Header(alias="X-DeepSeek-Model")] = None,
-    report_mode: Annotated[str | None, Header(alias="X-Castle-Report-Mode")] = None,
 ):
     payload = authorize(case_id, case_token)
     validate_model(deepseek_model)
-    selected_mode = validate_report_mode(report_mode)
     missing = [system for system in payload["systems"] if system not in payload["confirmed_facts"]]
     if missing:
         raise HTTPException(409, f"请先确认这些 chamber 的事实：{', '.join(missing)}")
@@ -178,67 +173,35 @@ async def create_reports(
         for system in payload["systems"]
     }
     facts_snapshot = payload["confirmed_facts"]
-    if selected_mode in {"free", "guided"}:
-        chamber_runner = run_guided_chamber if selected_mode == "guided" else run_free_chamber
-        results = await asyncio.gather(
-            *(
-                chamber_runner(system, SYSTEMS[system], facts_by_system[system], deepseek_key, deepseek_model)
-                for system in payload["systems"]
+    results = await asyncio.gather(
+        *(
+            run_guided_chamber(
+                system, SYSTEMS[system], facts_by_system[system], deepseek_key, deepseek_model
             )
+            for system in payload["systems"]
         )
-        reports = {}
-        free_texts = {}
-        warnings = []
-        for system, (free_text, warning) in zip(payload["systems"], results):
-            if free_text:
-                free_texts[system] = free_text
-            if warning:
-                warnings.append(f"{SYSTEMS[system]}: {warning}")
-            reports[system] = {
-                "system_id": system,
-                "display_name": SYSTEMS[system],
-                "mode": selected_mode,
-                "free_text": free_text,
-                "claims": [],
-                "sections": {},
-                "abstentions": [],
-                "warning": warning,
-            }
-        tribunal_text, tribunal_warning = await run_free_tribunal(free_texts, deepseek_key, deepseek_model)
-        tribunal = {
-            "mode": selected_mode,
-            "findings": [],
-            "summary": tribunal_text,
-            "counts": {},
-            "disclaimer": "自然语言模式没有逐条 Evidence/Rule 审计；结果仅供比较叙事，不代表准确或真实。",
+    )
+    reports = {}
+    report_texts = {}
+    warnings = []
+    for system, (report_text, warning) in zip(payload["systems"], results):
+        if report_text:
+            report_texts[system] = report_text
+        if warning:
+            warnings.append(f"{SYSTEMS[system]}: {warning}")
+        reports[system] = {
+            "system_id": system,
+            "display_name": SYSTEMS[system],
+            "text": report_text,
+            "warning": warning,
         }
-    else:
-        results = await asyncio.gather(
-            *(run_chamber_skill(system, facts_by_system[system], deepseek_key, deepseek_model) for system in payload["systems"])
-        )
-        reports = {}
-        all_claims = []
-        warnings = []
-        for system, (claims, warning) in zip(payload["systems"], results):
-            all_claims.extend(claims)
-            if warning:
-                warnings.append(f"{SYSTEMS[system]}: {warning}")
-            covered = {theme for claim in claims for theme in claim.themes}
-            reports[system] = {
-                "system_id": system,
-                "display_name": SYSTEMS[system],
-                "mode": "grounded",
-                "free_text": None,
-                "claims": [claim.model_dump(mode="json") for claim in claims],
-                "sections": {
-                    theme: [claim.id for claim in claims if theme in claim.themes]
-                    for theme in sorted(THEMES)
-                    if any(theme in claim.themes for claim in claims)
-                },
-                "abstentions": [theme for theme in sorted(THEMES) if theme not in covered],
-                "warning": warning,
-            }
-        tribunal, tribunal_warning = await run_tribunal(all_claims, deepseek_key, deepseek_model)
+    tribunal_text, tribunal_warning = await run_guided_tribunal(
+        report_texts, deepseek_key, deepseek_model
+    )
+    tribunal = {
+        "summary": tribunal_text,
+        "disclaimer": "这是跨体系叙事比较，不代表科学准确或事实证明。",
+    }
     if tribunal_warning:
         warnings.append(tribunal_warning)
     async with case_write_lock:
@@ -247,7 +210,6 @@ async def create_reports(
             raise HTTPException(409, "事实在报告生成期间发生了变化，请重新生成")
         payload["reports"] = reports
         payload["tribunal"] = tribunal
-        payload["report_mode"] = selected_mode
         payload["status"] = "reports_ready"
         payload["report_warnings"] = warnings
         get_store().save(payload)
@@ -266,20 +228,13 @@ async def create_debate(
     validate_model(deepseek_model)
     if not payload.get("reports"):
         raise HTTPException(409, "请先生成七份 general reports")
-    if payload.get("report_mode") == "free":
-        raise HTTPException(409, "纯 API 对照模式暂不执行交叉质询；请切换轻量 Skill 或 Grounded Skills 模式重新生成")
     facts_by_system = {
         system: [Fact.model_validate(item) for item in items]
         for system, items in payload["confirmed_facts"].items()
     }
-    if payload.get("report_mode") == "guided":
-        hearing, warning = await run_guided_debate(
-            request.question, facts_by_system, deepseek_key, deepseek_model
-        )
-    else:
-        hearing, warning = await run_debate(
-            request.question, facts_by_system, deepseek_key, deepseek_model
-        )
+    hearing, warning = await run_guided_debate(
+        request.question, facts_by_system, deepseek_key, deepseek_model
+    )
     if warning or not hearing:
         raise HTTPException(502, warning or "质询未完成")
     async with case_write_lock:
@@ -304,13 +259,6 @@ def validate_systems(systems: list[str]) -> list[str]:
 def validate_model(model: str | None) -> None:
     if model and model not in ALLOWED_MODELS:
         raise HTTPException(422, "Unsupported DeepSeek model")
-
-
-def validate_report_mode(mode: str | None) -> str:
-    selected = mode or "grounded"
-    if selected not in ALLOWED_REPORT_MODES:
-        raise HTTPException(422, "Unsupported report mode")
-    return selected
 
 
 def authorize(case_id: str, token: str | None) -> dict:

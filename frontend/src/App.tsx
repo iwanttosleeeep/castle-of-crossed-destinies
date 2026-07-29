@@ -1,13 +1,12 @@
-import { FormEvent, useMemo, useState } from 'react'
+import { FormEvent, ReactNode, useState } from 'react'
 
 type Fact = { id:string; label:string; value:string; time_sensitive:boolean; source_span?:string|null; extraction_confidence?:number|null }
 type Extraction = { system_id:string; display_name:string; filename:string; extracted_characters:number; source_bytes?:number; extraction_engine?:string; facts:Fact[]; source_commentary:string[]; warnings:string[]; confirmed:boolean }
-type Claim = { id:string; system_id:string; neutral_statement:string; statement:string; themes:string[]; evidence_ids:string[]; rule_ids:string[]; caveat:string; counter_reading:string; confidence:number; specificity:number; barnum_risk:number }
-type ReportMode = 'free'|'guided'|'grounded'
-type ChamberReport = { system_id:string; display_name:string; mode?:ReportMode; free_text?:string|null; claims:Claim[]; sections:Record<string,string[]>; abstentions:string[]; warning?:string|null }
-type Finding = { id:string; title:string; type:string; theme:string; claim_ids:string[]; systems:string[]; agreement_strength?:number|null; explanation:string; open_question:string }
-type Hearing = { id:string; mode?:ReportMode; question:string; answers:any[]; challenges:any[]; rebuttals:any[]; summary:any; guided_answers?:{system_id:string;text:string}[]; guided_rebuttals?:{system_id:string;text:string}[]; guided_summary?:string; warnings?:string[] }
-type CaseData = { case_id:string; profile:any; systems:string[]; status:string; report_mode?:ReportMode; extractions:Record<string,Extraction>; confirmed_facts:Record<string,Fact[]>; reports:Record<string,ChamberReport>; tribunal?:{mode?:ReportMode;findings:Finding[];summary:string;counts:Record<string,number>;disclaimer:string}|null; debates:Hearing[]; report_warnings?:string[] }
+type ChamberReport = { system_id:string; display_name:string; text?:string|null; free_text?:string|null; warning?:string|null }
+type GuidedTestimony = { system_id:string; text:string }
+type Hearing = { id:string; question:string; guided_answers?:GuidedTestimony[]; guided_rebuttals?:GuidedTestimony[]; guided_summary?:string; warnings?:string[] }
+type Tribunal = { summary:string; disclaimer:string }
+type CaseData = { case_id:string; systems:string[]; status:string; extractions:Record<string,Extraction>; confirmed_facts:Record<string,Fact[]>; reports:Record<string,ChamberReport>; tribunal?:Tribunal|null; debates:Hearing[]; report_warnings?:string[] }
 
 const systems = [
   ['bazi', 'BaZi 八字', '四柱 · 五行 · 十神'],
@@ -19,19 +18,12 @@ const systems = [
   ['dreamspell', 'Dreamspell', 'Kin · Tone · Solar Seal'],
 ] as const
 
-const themeNames:Record<string,string> = {
-  identity_orientation:'核心结构', decision_style:'决策方式', thinking_communication:'思考与沟通',
-  relationships_boundaries:'关系与边界', work_creation:'工作与创造', resources_stewardship:'资源与管理',
-  stress_adaptation:'压力与适应', change_timing:'变化与时机', meaning_imagination:'意义与想象',
-}
-
 export default function App() {
   const [stage, setStage] = useState<'entry'|'review'|'report'>('entry')
   const [selected, setSelected] = useState<string[]>(systems.map(([id]) => id))
   const [files, setFiles] = useState<Record<string,File|null>>({})
   const [apiKey, setApiKey] = useState('')
   const [model, setModel] = useState('deepseek-v4-flash')
-  const [reportMode, setReportMode] = useState<ReportMode>('guided')
   const [caseData, setCaseData] = useState<CaseData|null>(null)
   const [caseToken, setCaseToken] = useState('')
   const [restoreId, setRestoreId] = useState('')
@@ -41,7 +33,7 @@ export default function App() {
   const insecureRemote = !window.isSecureContext && !['localhost','127.0.0.1'].includes(window.location.hostname)
 
   const providerHeaders = () => {
-    const headers:Record<string,string> = {'X-DeepSeek-Model':model,'X-Castle-Report-Mode':reportMode}
+    const headers:Record<string,string> = {'X-DeepSeek-Model':model}
     if (apiKey) headers['X-DeepSeek-Key'] = apiKey
     if (caseToken) headers['X-Case-Token'] = caseToken
     return headers
@@ -52,9 +44,8 @@ export default function App() {
     const missing = selected.filter(id => !files[id])
     if (missing.length) return setError(`请为每个已开启的体系上传报告：${missing.map(systemName).join('、')}`)
     setLoading('正在建立案件…')
-    const form = new FormData(event.currentTarget)
     try {
-      const create = await api('/api/cases', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({systems:selected, profile:{display_name:optionalFormValue(form,'name'),birth_date:optionalFormValue(form,'date'),birth_time:optionalFormValue(form,'time'),birthplace_text:optionalFormValue(form,'place'),timezone_name:optionalFormValue(form,'timezone'),time_precision:form.get('precision')||'unknown'}})})
+      const create = await api('/api/cases', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({systems:selected})})
       setCaseToken(create.resume_token)
       const token = create.resume_token as string
       const extractions:Extraction[] = []
@@ -64,14 +55,14 @@ export default function App() {
         const body = new FormData(); body.append('file', files[id] as File)
         extractions.push(await api(`/api/cases/${create.case_id}/sources/${id}`, {method:'POST', headers:{...providerHeaders(), 'X-Case-Token':token}, body}))
       }
-      const next = {...create, extractions:Object.fromEntries(extractions.map((item:Extraction) => [item.system_id,item]))}
-      setCaseData(next); setStage('review'); scrollTo('review')
+      setCaseData({...create, extractions:Object.fromEntries(extractions.map(item => [item.system_id,item]))})
+      setStage('review'); scrollTo('review')
     } catch (caught) { setError(messageOf(caught)) } finally { setLoading('') }
   }
 
   async function confirmAndGenerate() {
     if (!caseData) return
-    const empty = caseData.systems.filter(id => !(caseData.extractions[id]?.facts.length))
+    const empty = caseData.systems.filter(id => !caseData.extractions[id]?.facts.length)
     if (empty.length) return setError(`这些报告没有可确认事实：${empty.map(systemName).join('、')}。请添加事实或重新上传。`)
     setError(''); setLoading('正在封存用户确认的事实…')
     try {
@@ -86,8 +77,9 @@ export default function App() {
     event.preventDefault(); setError(''); setLoading('正在恢复案件…')
     try {
       const restored = await api(`/api/cases/${restoreId.trim()}`, {headers:{'X-Case-Token':restoreToken.trim()}})
-      setCaseToken(restoreToken.trim()); setCaseData(restored); setSelected(restored.systems); setReportMode(restored.report_mode||'guided')
-      setStage(Object.keys(restored.reports || {}).length ? 'report' : 'review'); scrollTo(Object.keys(restored.reports || {}).length ? 'report' : 'review')
+      setCaseToken(restoreToken.trim()); setCaseData(restored); setSelected(restored.systems)
+      setStage(Object.keys(restored.reports || {}).length ? 'report' : 'review')
+      scrollTo(Object.keys(restored.reports || {}).length ? 'report' : 'review')
     } catch (caught) { setError(messageOf(caught)) } finally { setLoading('') }
   }
 
@@ -108,20 +100,20 @@ export default function App() {
 
   return <main>
     <nav><span className="site-title">THE CASTLE OF CROSSED DESTINIES</span><a href="#method">Method</a></nav>
-    <section className="hero"><p className="eyebrow">SEVEN SEALED CHAMBERS · ONE TRIBUNAL</p><h1><em>THE CASTLE OF<br/>CROSSED DESTINIES</em></h1><p className="lede">上传你已有的七套报告。城堡先只抽取盘面事实，等你逐项确认；七间密室彼此隔离作证，最后才在宴会厅相互质询。</p><div className="rule"/><p className="note">Files are transient · API keys are never stored · Every claim must cite evidence</p><div className="castle-card"><img src="/castle-card.jpg" alt="The Castle of Crossed Destinies card"/></div></section>
+    <section className="hero"><p className="eyebrow">SEVEN SEALED CHAMBERS · ONE TRIBUNAL</p><h1><em>THE CASTLE OF<br/>CROSSED DESTINIES</em></h1><p className="lede">上传你已有的七套报告。城堡先只抽取盘面事实，等你逐项确认；七间密室彼此隔离作证，最后才在宴会厅相互质询。</p><div className="rule"/><p className="note">Files are transient · API keys are never stored · Readings stay inside confirmed facts</p><div className="castle-card"><img src="/castle-card.jpg" alt="The Castle of Crossed Destinies card"/></div></section>
 
-    <section className="entry" id="entry"><div><p className="eyebrow">I. OPEN A CASE</p><h2>Bring your seven dossiers.</h2><p>每个体系分别上传 PDF、TXT 或图片。上传阶段只做文字识别与事实抽取，不生成性格、命运或建议。</p><RestoreForm id={restoreId} token={restoreToken} setId={setRestoreId} setToken={setRestoreToken} submit={restoreCase}/></div>
-      <form onSubmit={startCase}><p className="optional-profile-note">基础资料均为可选项。报告里已有的信息不必重复填写；留空不会影响文件抽取。</p><label>姓名或昵称 <small>可选</small><input name="name" placeholder="可留空"/></label><div className="twocol"><label>出生日期 <small>可选</small><input name="date" type="date"/></label><label>出生时间 <small>可选</small><input name="time" type="time"/></label></div><label>出生地点 <small>可选</small><input name="place" placeholder="可留空"/></label><div className="twocol"><label>IANA 时区 <small>可选</small><input name="timezone" placeholder="例如 Asia/Shanghai；可留空"/></label><label>时间精度 <small>可选</small><select name="precision" defaultValue="unknown"><option value="unknown">未知 / 未填写</option><option value="exact">精确</option><option value="approximate">约略</option></select></label></div>
-        <div className="key-panel"><label>DeepSeek API Key · 抽取、分析与辩论<input type="password" autoComplete="off" value={apiKey} onChange={e=>setApiKey(e.target.value)} placeholder="sk-...（只在页面内存）"/></label><div className="twocol"><label>模型<select value={model} onChange={e=>setModel(e.target.value)}><option value="deepseek-v4-flash">V4 Flash</option><option value="deepseek-v4-pro">V4 Pro</option></select></label><label>报告模式<select value={reportMode} onChange={e=>setReportMode(e.target.value as ReportMode)}><option value="guided">轻量 Skill · 人格＋防幻觉</option><option value="free">实验自由模式 · 纯 API</option><option value="grounded">Grounded Skills · 引用审计</option></select></label></div>{reportMode==='guided'&&<p className="mode-disclosure">推荐测试：只加载人物性格与短防幻觉契约；不加载知识规则、不要求 JSON 或 Rule ID。每室仍只调用一次 API。</p>}{reportMode==='free'&&<p className="mode-disclosure">纯 API 对照组：不读取任何 Castle Skill；每室只调用一次 API，最接近普通聊天式分析。</p>}{insecureRemote&&<p className="http-key-warning">⚠ 当前页面使用 HTTP。为了方便测试，Castle 仍允许填写并发送 Key，但传输过程不受 HTTPS 加密保护。请只短暂使用测试 Key，并尽快配置 HTTPS。</p>}<p>六份 AI-readable TXT/JSON 会在服务器本地直接解析，不消耗模型调用；其他 TXT 或文本 PDF 才由 DeepSeek 只抽取显式盘面事实。原文件与完整文本均不保存。用户确认后，报告与 Tribunal 只读取确认事实。服务器已配置 Key 时可留空。</p></div>
-        <fieldset><legend>Open chambers & attach reports</legend><div className="systems upload-systems">{systems.map(([id,title,detail]) => <div className={selected.includes(id)?'system upload active':'system upload'} key={id}><button type="button" onClick={()=>setSelected(v=>v.includes(id)?v.filter(x=>x!==id):[...v,id])}><b>{title}</b><small>{detail}</small><i>{selected.includes(id)?'✓':'+'}</i></button>{selected.includes(id)&&<label className="file"><input type="file" accept=".pdf,.txt,.md,.png,.jpg,.jpeg,.webp,.tif,.tiff" onChange={e=>setFiles({...files,[id]:e.target.files?.[0]||null})}/><span>{files[id]?.name || '选择 PDF / TXT / 图片'}</span></label>}</div>)}</div></fieldset>
+    <section className="entry" id="entry"><div><p className="eyebrow">I. OPEN A CASE</p><h2>Bring your seven dossiers.</h2><p>只需选择体系并上传 PDF、TXT 或图片；姓名、生日、出生时间、地点与时区都不需要填写。</p><RestoreForm id={restoreId} token={restoreToken} setId={setRestoreId} setToken={setRestoreToken} submit={restoreCase}/></div>
+      <form onSubmit={startCase}>
+        <div className="key-panel"><label>DeepSeek API Key<input type="password" autoComplete="off" value={apiKey} onChange={e=>setApiKey(e.target.value)} placeholder="sk-...（只在页面内存）"/></label><label>模型<select value={model} onChange={e=>setModel(e.target.value)}><option value="deepseek-v4-flash">V4 Flash</option><option value="deepseek-v4-pro">V4 Pro</option></select></label>{insecureRemote&&<p className="http-key-warning">⚠ 当前页面使用 HTTP，Key 的传输没有 HTTPS 加密。请只短暂使用可撤销的测试 Key。</p>}<p>结构化 TXT/JSON 由服务器直接解析；其他文本由 DeepSeek 抽取显式事实。原文件、完整文本与 API Key 均不保存。</p></div>
+        <fieldset><legend>选择密室并上传报告</legend><div className="systems upload-systems">{systems.map(([id,title,detail]) => <div className={selected.includes(id)?'system upload active':'system upload'} key={id}><button type="button" onClick={()=>setSelected(value=>value.includes(id)?value.filter(item=>item!==id):[...value,id])}><b>{title}</b><small>{detail}</small><i>{selected.includes(id)?'✓':'+'}</i></button>{selected.includes(id)&&<label className="file"><input type="file" accept=".pdf,.txt,.md,.png,.jpg,.jpeg,.webp,.tif,.tiff" onChange={e=>setFiles({...files,[id]:e.target.files?.[0]||null})}/><span>{files[id]?.name || '选择 PDF / TXT / 图片'}</span></label>}</div>)}</div></fieldset>
         {error&&<p className="error">{error}</p>}<button className="enter" disabled={!!loading||!selected.length}>{loading||'CREATE CASE & EXTRACT FACTS'}</button>
       </form>
     </section>
 
     {caseData && <CasePassport data={caseData} token={caseToken}/>}
     {stage==='review' && caseData && <Review data={caseData} updateFacts={updateFacts} upload={uploadToExisting} submit={confirmAndGenerate} loading={loading} error={error}/>}
-    {stage==='report' && caseData && <ReportView data={caseData} token={caseToken} providerHeaders={providerHeaders} setData={setCaseData} review={()=>{setStage('review');scrollTo('review')}} reportMode={reportMode} setReportMode={setReportMode} apiKey={apiKey} setApiKey={setApiKey} loading={loading} setLoading={setLoading} error={error} setError={setError}/>}
-    <section className="method" id="method"><p className="eyebrow">THE METHOD</p><h2>Castle parses. Seven chambers testify.</h2><p>结构化 TXT/JSON 由确定性解析器读取；其他文本才交给 DeepSeek 抽取。七间 chamber 随后只看你确认后的事实。角色口吻在独立的第二遍添加，Tribunal 和最终主持人永远只读取中性证词。</p></section><footer>THE CASTLE OF CROSSED DESTINIES <span>Symbolic interpretation—not proof, diagnosis, or professional advice.</span></footer>
+    {stage==='report' && caseData && <ReportView data={caseData} providerHeaders={providerHeaders} setData={setCaseData} review={()=>{setStage('review');scrollTo('review')}} apiKey={apiKey} setApiKey={setApiKey} loading={loading} setLoading={setLoading} error={error} setError={setError}/>}
+    <section className="method" id="method"><p className="eyebrow">THE METHOD</p><h2>Castle parses. Seven chambers testify.</h2><p>报告先被整理成可核对事实；确认后，每间密室只读取自己的资料和轻量人物 Skill。Tribunal 比较独立报告，提问阶段再进行一次回答、rebuttal 与总结。</p></section><footer>THE CASTLE OF CROSSED DESTINIES <span>Symbolic interpretation—not proof, diagnosis, or professional advice.</span></footer>
   </main>
 }
 
@@ -129,40 +121,56 @@ function RestoreForm({id,token,setId,setToken,submit}:any) { return <form classN
 
 function CasePassport({data,token}:{data:CaseData;token:string}) { const [copied,setCopied]=useState(false); return <section className="passport"><div><p className="eyebrow">CASE PASSPORT</p><h3>{data.case_id}</h3><p>恢复令牌只显示在首次创建时。请现在保存；服务器只保存它的哈希。</p></div><code>{token || '令牌已在创建时发放'}</code>{token&&<button onClick={()=>navigator.clipboard.writeText(`${data.case_id}\n${token}`).then(()=>setCopied(true))}>{copied?'COPIED':'COPY ID + TOKEN'}</button>}</section> }
 
-function Review({data,updateFacts,upload,submit,loading,error}:{data:CaseData;updateFacts:(id:string,facts:Fact[])=>void;upload:(id:string,file:File)=>void;submit:()=>void;loading:string;error:string}) { return <section className="review" id="review"><header><p className="eyebrow">II. USER CONFIRMATION</p><h2>Check every extracted fact.</h2><p>这一步决定后续所有证词的证据边界。修正 OCR 错字，删除“你很敏感”一类解释文字；需要时可手动补充报告中明确写出的事实。</p></header><div className="review-grid">{data.systems.map(id=>data.extractions[id]?<FactEditor key={id} extraction={data.extractions[id]} onChange={facts=>updateFacts(id,facts)} onUpload={file=>upload(id,file)}/>:<MissingUpload key={id} systemId={id} onUpload={file=>upload(id,file)}/>)}</div>{error&&<p className="error centered">{error}</p>}<button className="enter assemble" onClick={submit} disabled={!!loading}>{loading||'USER CONFIRMED · ASSEMBLE SEVEN REPORTS'}</button></section> }
+function Review({data,updateFacts,upload,submit,loading,error}:{data:CaseData;updateFacts:(id:string,facts:Fact[])=>void;upload:(id:string,file:File)=>void;submit:()=>void;loading:string;error:string}) { return <section className="review" id="review"><header><p className="eyebrow">II. USER CONFIRMATION</p><h2>Check every extracted fact.</h2><p>修正识别错误，删除原报告的解释性句子；需要时可手动补充报告明确写出的盘面事实。</p></header><div className="review-grid">{data.systems.map(id=>data.extractions[id]?<FactEditor key={id} extraction={data.extractions[id]} onChange={facts=>updateFacts(id,facts)} onUpload={file=>upload(id,file)}/>:<MissingUpload key={id} systemId={id} onUpload={file=>upload(id,file)}/>)}</div>{error&&<p className="error centered">{error}</p>}<button className="enter assemble" onClick={submit} disabled={!!loading}>{loading||'USER CONFIRMED · ASSEMBLE REPORTS'}</button></section> }
 
-function FactEditor({extraction,onChange,onUpload}:{extraction:Extraction;onChange:(facts:Fact[])=>void;onUpload:(file:File)=>void}) { const add=()=>onChange([...extraction.facts,{id:`${extraction.system_id}.manual-${Date.now()}`,label:'',value:'',time_sensitive:!['numerology','dreamspell'].includes(extraction.system_id),source_span:'用户根据原报告手动补充',extraction_confidence:1}]); return <article className="fact-editor"><div className="editor-head"><div><p>{extraction.display_name}</p><small>{extraction.filename} · {engineName(extraction.extraction_engine)} · {formatSize(extraction.source_bytes||0)}</small></div><span>{extraction.facts.length} FACTS</span></div><label className="replace-file">重新上传<input type="file" accept=".pdf,.txt,.md,.png,.jpg,.jpeg,.webp,.tif,.tiff" onChange={e=>e.target.files?.[0]&&onUpload(e.target.files[0])}/></label>{extraction.warnings.map(item=><p className="warning" key={item}>{item}</p>)}{extraction.facts.map((fact,index)=><div className="fact-row" key={fact.id}><input aria-label="事实名称" value={fact.label} onChange={e=>onChange(extraction.facts.map((x,i)=>i===index?{...x,label:e.target.value}:x))}/><textarea aria-label="事实内容" value={fact.value} onChange={e=>onChange(extraction.facts.map((x,i)=>i===index?{...x,value:e.target.value}:x))}/><button title="删除" onClick={()=>onChange(extraction.facts.filter((_,i)=>i!==index))}>×</button>{fact.source_span&&<small>{fact.source_span}</small>}</div>)}<button className="add-fact" onClick={add}>+ ADD EXPLICIT FACT</button>{extraction.source_commentary.length>0&&<details><summary>已排除的原报告解释（{extraction.source_commentary.length}）</summary>{extraction.source_commentary.map(item=><p key={item}>{item}</p>)}</details>}</article> }
+function FactEditor({extraction,onChange,onUpload}:{extraction:Extraction;onChange:(facts:Fact[])=>void;onUpload:(file:File)=>void}) { const add=()=>onChange([...extraction.facts,{id:`${extraction.system_id}.manual-${Date.now()}`,label:'',value:'',time_sensitive:!['numerology','dreamspell'].includes(extraction.system_id),source_span:'用户根据原报告手动补充',extraction_confidence:1}]); return <article className="fact-editor"><div className="editor-head"><div><p>{extraction.display_name}</p><small>{extraction.filename} · {engineName(extraction.extraction_engine)} · {formatSize(extraction.source_bytes||0)}</small></div><span>{extraction.facts.length} FACTS</span></div><label className="replace-file">重新上传<input type="file" accept=".pdf,.txt,.md,.png,.jpg,.jpeg,.webp,.tif,.tiff" onChange={e=>e.target.files?.[0]&&onUpload(e.target.files[0])}/></label>{extraction.warnings.map(item=><p className="warning" key={item}>{item}</p>)}{extraction.facts.map((fact,index)=><div className="fact-row" key={fact.id}><input aria-label="事实名称" value={fact.label} onChange={e=>onChange(extraction.facts.map((item,i)=>i===index?{...item,label:e.target.value}:item))}/><textarea aria-label="事实内容" value={fact.value} onChange={e=>onChange(extraction.facts.map((item,i)=>i===index?{...item,value:e.target.value}:item))}/><button title="删除" onClick={()=>onChange(extraction.facts.filter((_,i)=>i!==index))}>×</button>{fact.source_span&&<small>{fact.source_span}</small>}</div>)}<button className="add-fact" onClick={add}>+ ADD EXPLICIT FACT</button>{extraction.source_commentary.length>0&&<details><summary>已排除的原报告解释（{extraction.source_commentary.length}）</summary>{extraction.source_commentary.map(item=><p key={item}>{item}</p>)}</details>}</article> }
 function MissingUpload({systemId,onUpload}:{systemId:string;onUpload:(file:File)=>void}) { return <article className="fact-editor missing-upload"><p>{systemName(systemId)}</p><small>这份报告尚未上传，或上次上传在网络中断前没有完成。</small><label>继续上传 PDF / TXT / 图片<input type="file" accept=".pdf,.txt,.md,.png,.jpg,.jpeg,.webp,.tif,.tiff" onChange={e=>e.target.files?.[0]&&onUpload(e.target.files[0])}/></label></article> }
 
-function ReportView({data,providerHeaders,setData,review,reportMode,setReportMode,apiKey,setApiKey,loading,setLoading,error,setError}:{data:CaseData;token:string;providerHeaders:()=>Record<string,string>;setData:(d:CaseData)=>void;review:()=>void;reportMode:ReportMode;setReportMode:(v:ReportMode)=>void;apiKey:string;setApiKey:(v:string)=>void;loading:string;setLoading:(v:string)=>void;error:string;setError:(v:string)=>void}) {
-  const claims = useMemo(()=>Object.values(data.reports).flatMap(report=>report.claims),[data.reports]); const claimMap=useMemo(()=>Object.fromEntries(claims.map(c=>[c.id,c])),[claims]); const [question,setQuestion]=useState('')
-  async function regenerate() { setError(''); setLoading('正在用已确认事实重新生成七份报告与 Tribunal…'); try { const assembled=await api(`/api/cases/${data.case_id}/reports`,{method:'POST',headers:providerHeaders()}); setData(assembled); scrollTo('report') } catch(caught){setError(messageOf(caught))} finally{setLoading('')} }
-  async function ask(event:FormEvent) { event.preventDefault(); setError(''); setLoading(data.report_mode==='guided'?'各室正在独立回答、完成一次 rebuttal，并等待主持人总结…':'七间密室独立回答；主持人正在提出一次质询…'); try { const hearing=await api(`/api/cases/${data.case_id}/debates`,{method:'POST',headers:{...providerHeaders(),'Content-Type':'application/json'},body:JSON.stringify({question})}); setData({...data,debates:[...data.debates,hearing]}); setQuestion(''); setTimeout(()=>document.querySelector('#hearing-latest')?.scrollIntoView({behavior:'smooth'}),80) } catch(caught){setError(messageOf(caught))} finally{setLoading('')} }
-  const naturalMode=data.report_mode==='free'||data.report_mode==='guided'
-  const pureFreeMode=data.report_mode==='free'
-  const badge=data.report_mode==='guided'?'LIGHT SKILL':data.report_mode==='free'?'FREE TEST':'USER CONFIRMED'
-  return <section id="report" className="report"><header><div><p className="eyebrow">III. SEVEN GENERAL REPORTS</p><h2>The assembled testimony</h2></div><div className="badge skills_ready">{badge}<small>{naturalMode?`${Object.values(data.reports).filter(report=>report.free_text).length} natural-language reports`:`${claims.length} admissible claims`}</small></div></header>{data.report_warnings?.map(item=><p className="warning disclosure" key={item}>{item}</p>)}
-    <div className="regenerate-panel"><div><b>已确认事实会被保留</b><p>可以切换模式后直接重新生成，不需要重新上传或再次确认事实。</p></div><label>本次生成模式<select value={reportMode} onChange={e=>setReportMode(e.target.value as ReportMode)}><option value="guided">轻量 Skill · 人格＋防幻觉</option><option value="free">实验自由模式 · 纯 API</option><option value="grounded">Grounded Skills · 引用审计</option></select></label>{!apiKey&&<label>DeepSeek API Key（服务器已配置时可留空）<input type="password" value={apiKey} onChange={e=>setApiKey(e.target.value)} placeholder="sk-...（只在页面内存）"/></label>}<div className="regenerate-actions"><button type="button" className="secondary" onClick={review} disabled={!!loading}>返回事实确认 / 重新上传</button><button type="button" onClick={regenerate} disabled={!!loading}>{loading||'按所选模式重新生成'}</button></div></div>
+function ReportView({data,providerHeaders,setData,review,apiKey,setApiKey,loading,setLoading,error,setError}:{data:CaseData;providerHeaders:()=>Record<string,string>;setData:(data:CaseData)=>void;review:()=>void;apiKey:string;setApiKey:(value:string)=>void;loading:string;setLoading:(value:string)=>void;error:string;setError:(value:string)=>void}) {
+  const [question,setQuestion]=useState('')
+  async function regenerate() { setError(''); setLoading('正在用已确认事实重新生成报告与 Tribunal…'); try { const assembled=await api(`/api/cases/${data.case_id}/reports`,{method:'POST',headers:providerHeaders()}); setData(assembled); scrollTo('report') } catch(caught){setError(messageOf(caught))} finally{setLoading('')} }
+  async function ask(event:FormEvent) { event.preventDefault(); setError(''); setLoading('各室正在独立回答、完成一次 rebuttal，并等待主持人总结…'); try { const hearing=await api(`/api/cases/${data.case_id}/debates`,{method:'POST',headers:{...providerHeaders(),'Content-Type':'application/json'},body:JSON.stringify({question})}); setData({...data,debates:[...data.debates,hearing]}); setQuestion(''); setTimeout(()=>document.querySelector('#hearing-latest')?.scrollIntoView({behavior:'smooth'}),80) } catch(caught){setError(messageOf(caught))} finally{setLoading('')} }
+  const completed=Object.values(data.reports).filter(report=>report.text||report.free_text).length
+  return <section id="report" className="report"><header><div><p className="eyebrow">III. GENERAL REPORTS</p><h2>The assembled testimony</h2></div><div className="badge skills_ready">LIGHT SKILL<small>{completed} natural-language reports</small></div></header>{data.report_warnings?.map(item=><p className="warning disclosure" key={item}>{item}</p>)}
+    <div className="regenerate-panel"><div><b>已确认事实会被保留</b><p>重新生成不需要再次上传或确认。</p></div>{!apiKey&&<label>DeepSeek API Key（服务器已配置时可留空）<input type="password" value={apiKey} onChange={e=>setApiKey(e.target.value)} placeholder="sk-...（只在页面内存）"/></label>}<div className="regenerate-actions"><button type="button" className="secondary" onClick={review} disabled={!!loading}>返回事实确认 / 重新上传</button><button type="button" onClick={regenerate} disabled={!!loading}>{loading||'重新生成报告'}</button></div></div>
     {error&&<p className="error">{error}</p>}
     <div className="report-grid">{data.systems.map(id=><GeneralReport key={id} report={data.reports[id]}/>)}</div>
-    <Tribunal tribunal={data.tribunal} claimMap={claimMap}/>
-    {pureFreeMode?<section className="hearing free-hearing-note"><p className="eyebrow">V. CROSS-EXAMINATION</p><h2>Paused in pure API mode.</h2><p>纯 API 仅作为无 Skill 对照组。请在上方切换到“轻量 Skill · 人格＋防幻觉”，即可继续独立回答、一次 rebuttal 与主持人总结。</p></section>:<section className="hearing"><p className="eyebrow">V. CROSS-EXAMINATION</p><h2>Ask the seven chambers.</h2><p>{data.report_mode==='guided'?'轻量 Skill 会贯穿本轮：各室先独立回答，再阅读其他第一轮证词并各作一次 rebuttal，最后由主持人总结。':'每间 chamber 先独立回答；主持人只针对真实矛盾提出一次 challenge；被质询方各有一次 rebuttal，随后结案总结。'}</p>{!apiKey&&<label>本轮 DeepSeek API Key（仍不保存）<input type="password" value={apiKey} onChange={e=>setApiKey(e.target.value)} placeholder="服务器未配置时填写 sk-..."/></label>}<form onSubmit={ask}><textarea value={question} onChange={e=>setQuestion(e.target.value)} required minLength={3} placeholder="例如：面对职业选择时，七套体系分别看到了什么？哪些判断真正冲突？"/><button className="enter" disabled={!!loading}>{loading||'CONVENE ONE-ROUND HEARING'}</button></form>{error&&<p className="error">{error}</p>}{data.debates.map((hearing,index)=><HearingView hearing={hearing} latest={index===data.debates.length-1} key={hearing.id}/>)}</section>}
+    <TribunalView tribunal={data.tribunal}/>
+    <section className="hearing"><p className="eyebrow">V. CROSS-EXAMINATION</p><h2>Ask the seven chambers.</h2><p>各室先独立回答，再阅读其他第一轮证词并各作一次 rebuttal，最后由主持人总结。</p>{!apiKey&&<label>本轮 DeepSeek API Key（仍不保存）<input type="password" value={apiKey} onChange={e=>setApiKey(e.target.value)} placeholder="服务器未配置时填写 sk-..."/></label>}<form onSubmit={ask}><textarea value={question} onChange={e=>setQuestion(e.target.value)} required minLength={3} placeholder="例如：面对职业选择时，各体系分别看到了什么？哪些判断真正冲突？"/><button className="enter" disabled={!!loading}>{loading||'CONVENE ONE-ROUND HEARING'}</button></form>{error&&<p className="error">{error}</p>}{data.debates.map((hearing,index)=><GuidedHearingView hearing={hearing} latest={index===data.debates.length-1} key={hearing.id}/>)}</section>
   </section>
 }
 
-function GeneralReport({report}:{report:ChamberReport}) { if(!report)return null; const map=Object.fromEntries(report.claims.map(c=>[c.id,c])); const natural=report.mode==='free'||report.mode==='guided'; const label=report.mode==='guided'?'GUIDED TEXT':'FREE TEXT'; return <article className={natural?'general-report free-general-report':'general-report'}><div className="report-title"><p>{report.display_name}</p><span>{natural?label:`${report.claims.length} CLAIMS`}</span></div>{report.warning&&<p className="warning">{report.warning}</p>}{natural?(report.free_text?<div className="free-report-text">{report.free_text}</div>:<p className="abstain">自然语言模式暂未生成正文，请稍后重新生成。</p>):<>{Object.entries(report.sections).map(([theme,ids])=><section key={theme}><h4>{themeNames[theme]||theme}</h4>{ids.map(id=><ClaimCard claim={map[id]} key={id}/>)}</section>)}{report.claims.length===0&&<p className="abstain">本室暂未形成通过引用校验的解读，请重新生成或检查已确认事实。</p>}{report.abstentions.length>0&&report.claims.length>0&&<details className="abstention-summary"><summary>本室未覆盖的主题（{report.abstentions.length}）</summary><p>{report.abstentions.map(theme=>themeNames[theme]||theme).join(' · ')}</p></details>}</>}</article> }
-function ClaimCard({claim}:{claim:Claim}) { return <div className="claim"><p>{claim.statement}</p>{claim.statement!==claim.neutral_statement&&<details><summary>中性原证词</summary><p>{claim.neutral_statement}</p></details>}<small>Evidence {claim.evidence_ids.join(' · ')}<br/>Rules {claim.rule_ids.join(' · ')}</small><div className="claim-meta"><span>confidence {Math.round(claim.confidence*100)}%</span><span>Barnum {Math.round(claim.barnum_risk*100)}%</span></div><details><summary>限制与反向解读</summary><p>{claim.caveat}</p><p>{claim.counter_reading}</p></details></div> }
+function GeneralReport({report}:{report:ChamberReport|undefined}) { if(!report)return null; const text=report.text||report.free_text||''; return <article className="general-report"><div className="report-title"><p>{report.display_name}</p><span>GUIDED TEXT</span></div>{report.warning&&<p className="warning">{report.warning}</p>}{text?<MarkdownText text={text} className="report-markdown"/>:<p className="abstain">本室暂未生成正文，请稍后重新生成。</p>}</article> }
 
-function Tribunal({tribunal,claimMap}:{tribunal:CaseData['tribunal'];claimMap:Record<string,Claim>}) { const natural=tribunal?.mode==='free'||tribunal?.mode==='guided'; return <section className={natural?'tribunal-v2 free-tribunal':'tribunal-v2'}><div><p className="eyebrow">IV. THE TRIBUNAL</p><h2>Consensus is not truth.</h2><p>{tribunal?.summary}</p><small>{tribunal?.disclaimer}</small></div><div className="findings">{tribunal?.findings.map(f=><article className={`finding ${f.type}`} key={f.id}><div><span>{f.type.replaceAll('_',' ')}</span><h3>{f.title}</h3></div>{f.agreement_strength!=null&&<strong>{f.agreement_strength}<small>/100 narrative agreement</small></strong>}<p>{f.explanation}</p><small>{f.systems.map(systemName).join(' × ')}</small><details><summary>查看参与证词</summary>{f.claim_ids.map(id=><p key={id}>{claimMap[id]?.neutral_statement}</p>)}</details>{f.open_question&&<blockquote>{f.open_question}</blockquote>}</article>)}</div></section> }
+function TribunalView({tribunal}:{tribunal?:Tribunal|null}) { return <section className="tribunal-v2"><div><p className="eyebrow">IV. THE TRIBUNAL</p><h2>Consensus is not truth.</h2>{tribunal?.summary&&<MarkdownText text={tribunal.summary}/>}<small>{tribunal?.disclaimer}</small></div></section> }
 
-function HearingView({hearing,latest}:{hearing:Hearing;latest:boolean}) { if(hearing.mode==='guided')return <GuidedHearingView hearing={hearing} latest={latest}/>; return <article className="hearing-result" id={latest?'hearing-latest':undefined}><p className="eyebrow">{hearing.id}</p><h3>“{hearing.question}”</h3><div className="answers">{hearing.answers.map(a=><div key={a.system_id}><b>{systemName(a.system_id)}</b><p>{a.statement}</p><small>{a.abstained?'ABSTAINED':`Evidence ${a.evidence_ids.join(' · ')}`}</small></div>)}</div>{hearing.challenges.length>0&&<div className="challenges"><h4>Moderator challenges</h4>{hearing.challenges.map((c,i)=><p key={i}><b>{systemName(c.target_system)}:</b> {c.question}</p>)}</div>}{hearing.rebuttals.map(r=><div className="rebuttal" key={r.system_id}><span>{r.disposition}</span><b>{systemName(r.system_id)} rebuttal</b><p>{r.statement}</p></div>)}<div className="verdict"><h4>One-round summary</h4><SummaryList title="仍然一致" items={hearing.summary.aligned}/><SummaryList title="仍有冲突" items={hearing.summary.still_conflicted}/><SummaryList title="已收窄或让步" items={hearing.summary.resolved_or_narrowed}/><SummaryList title="无法回答" items={hearing.summary.unanswerable}/><p>{hearing.summary.closing}</p></div></article> }
-function GuidedHearingView({hearing,latest}:{hearing:Hearing;latest:boolean}) { return <article className="hearing-result guided-hearing" id={latest?'hearing-latest':undefined}><p className="eyebrow">{hearing.id} · LIGHT SKILL</p><h3>“{hearing.question}”</h3>{hearing.warnings?.map(item=><p className="warning" key={item}>{item}</p>)}<h4>Independent answers</h4><div className="answers">{hearing.guided_answers?.map(a=><div key={a.system_id}><b>{systemName(a.system_id)}</b><p>{a.text}</p></div>)}</div><h4>One rebuttal each</h4><div className="guided-rebuttals">{hearing.guided_rebuttals?.map(r=><div className="rebuttal" key={r.system_id}><b>{systemName(r.system_id)} rebuttal</b><p>{r.text}</p></div>)}</div><div className="verdict guided-verdict"><h4>Moderator summary</h4><p>{hearing.guided_summary}</p></div></article> }
-function SummaryList({title,items}:{title:string;items:string[]}) { return items?.length?<div><b>{title}</b><ul>{items.map(item=><li key={item}>{item}</li>)}</ul></div>:null }
+function GuidedHearingView({hearing,latest}:{hearing:Hearing;latest:boolean}) { return <article className="hearing-result guided-hearing" id={latest?'hearing-latest':undefined}><p className="eyebrow">{hearing.id} · LIGHT SKILL</p><h3>“{hearing.question}”</h3>{hearing.warnings?.map(item=><p className="warning" key={item}>{item}</p>)}<h4>Independent answers</h4><div className="answers">{hearing.guided_answers?.map(answer=><div key={answer.system_id}><b>{systemName(answer.system_id)}</b><MarkdownText text={answer.text}/></div>)}</div><h4>One rebuttal each</h4><div className="guided-rebuttals">{hearing.guided_rebuttals?.map(rebuttal=><div className="rebuttal" key={rebuttal.system_id}><b>{systemName(rebuttal.system_id)} rebuttal</b><MarkdownText text={rebuttal.text}/></div>)}</div><div className="verdict guided-verdict"><h4>Moderator summary</h4>{hearing.guided_summary?<MarkdownText text={hearing.guided_summary}/>:<p>旧版质询没有轻量总结，请重新提问。</p>}</div></article> }
+
+function MarkdownText({text,className=''}:{text:string;className?:string}) {
+  const nodes:ReactNode[]=[]; let paragraph:string[]=[]; let listKind:'ul'|'ol'|null=null; let listItems:string[]=[]; let key=0
+  const flushParagraph=()=>{if(!paragraph.length)return; const lines=paragraph; paragraph=[]; nodes.push(<p key={key++}>{lines.map((line,index)=><span key={index}>{inlineMarkdown(line)}{index<lines.length-1&&<br/>}</span>)}</p>)}
+  const flushList=()=>{if(!listKind||!listItems.length)return; const items=listItems; const kind=listKind; listKind=null; listItems=[]; nodes.push(kind==='ul'?<ul key={key++}>{items.map((item,index)=><li key={index}>{inlineMarkdown(item)}</li>)}</ul>:<ol key={key++}>{items.map((item,index)=><li key={index}>{inlineMarkdown(item)}</li>)}</ol>)}
+  for(const rawLine of text.replace(/\r/g,'').split('\n')) {
+    const line=rawLine.trim()
+    if(!line){flushParagraph();flushList();continue}
+    const heading=line.match(/^(#{1,4})\s+(.+)$/)
+    const bullet=line.match(/^[-+*]\s+(.+)$/)
+    const ordered=line.match(/^\d+[.)]\s+(.+)$/)
+    if(heading){flushParagraph();flushList();const level=heading[1].length;const content=inlineMarkdown(heading[2]);nodes.push(level===1?<h2 key={key++}>{content}</h2>:level===2?<h3 key={key++}>{content}</h3>:<h4 key={key++}>{content}</h4>);continue}
+    if(bullet||ordered){flushParagraph();const nextKind=bullet?'ul':'ol';if(listKind&&listKind!==nextKind)flushList();listKind=nextKind;listItems.push((bullet||ordered)![1]);continue}
+    if(/^(-{3,}|\*{3,})$/.test(line)){flushParagraph();flushList();nodes.push(<hr key={key++}/>);continue}
+    if(line.startsWith('>')){flushParagraph();flushList();nodes.push(<blockquote key={key++}>{inlineMarkdown(line.replace(/^>\s?/,''))}</blockquote>);continue}
+    flushList();paragraph.push(line)
+  }
+  flushParagraph();flushList()
+  return <div className={`markdown-text ${className}`.trim()}>{nodes}</div>
+}
+
+function inlineMarkdown(text:string):ReactNode[] { return text.split(/(\*\*.+?\*\*|__.+?__|`.+?`|\*[^*]+?\*)/g).filter(Boolean).map((token,index)=>token.startsWith('**')&&token.endsWith('**')?<strong key={index}>{token.slice(2,-2)}</strong>:token.startsWith('__')&&token.endsWith('__')?<strong key={index}>{token.slice(2,-2)}</strong>:token.startsWith('`')&&token.endsWith('`')?<code key={index}>{token.slice(1,-1)}</code>:token.startsWith('*')&&token.endsWith('*')?<em key={index}>{token.slice(1,-1)}</em>:token) }
 
 function systemName(id:string) { return systems.find(([system])=>system===id)?.[1] || id.replaceAll('_',' ') }
 function engineName(engine?:string) { return ({structured_text:'Deterministic structured parser',deepseek_text:'Local text + DeepSeek',manual_required:'Manual review'} as Record<string,string>)[engine||'']||'Legacy extraction' }
 function formatSize(bytes:number) { return bytes?`${Math.max(1,Math.round(bytes/1024)).toLocaleString()} KB`:'size unavailable' }
-function optionalFormValue(form:FormData,name:string) { const value=String(form.get(name)||'').trim(); return value||null }
 function scrollTo(id:string) { setTimeout(()=>document.querySelector(`#${id}`)?.scrollIntoView({behavior:'smooth'}),80) }
 async function api(url:string,init?:RequestInit) { const response=await fetch(url,init); const body=await response.json().catch(()=>({})); if(!response.ok) throw new Error(body.detail||`HTTP ${response.status}`); return body }
 function messageOf(caught:unknown) { return caught instanceof Error?caught.message:'无法连接到后端，请检查 FastAPI、反向代理或服务器日志。' }

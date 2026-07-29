@@ -5,7 +5,7 @@ import os
 from urllib.error import HTTPError, URLError
 
 from .deepseek import call_text, public_error_label
-from .freeform import clean_text_response, guided_skill_instructions
+from .guided_reports import clean_text_response, guided_skill_instructions
 from .schemas import Fact
 
 

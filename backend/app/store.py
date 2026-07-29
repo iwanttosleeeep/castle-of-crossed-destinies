@@ -36,13 +36,12 @@ class CaseStore:
         connection.execute("PRAGMA journal_mode=WAL")
         return connection
 
-    def create(self, profile: dict, systems: list[str]) -> tuple[dict, str]:
+    def create(self, systems: list[str]) -> tuple[dict, str]:
         case_id = f"CCD-{datetime.now():%y%m%d}-{uuid4().hex[:8].upper()}"
         token = secrets.token_urlsafe(24)
         now = datetime.now(timezone.utc).isoformat()
         payload = {
             "case_id": case_id,
-            "profile": profile,
             "systems": systems,
             "status": "awaiting_uploads",
             "extractions": {},
