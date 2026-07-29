@@ -1,4 +1,4 @@
 interface:
   display_name: "Guided Chamber Reading"
-  short_description: "Persona-led readings with compact hallucination safeguards"
-  default_prompt: "Use $guided-chamber-reading to write a vivid symbolic reading grounded only in confirmed chart facts."
+  short_description: "Persona-led reports and one-round hearings"
+  default_prompt: "Use $guided-chamber-reading to write a grounded symbolic report or conduct one natural-language rebuttal round."

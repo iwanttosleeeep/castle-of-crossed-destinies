@@ -1,6 +1,6 @@
 ---
 name: guided-chamber-reading
-description: Write a one-pass natural-language reading for one Castle chamber using only confirmed chart facts, a chamber persona, and compact hallucination safeguards. Use for vivid BaZi, Ziwei, Western astrology, Jyotish, numerology, Human Design, or Dreamspell reports when strict JSON claims, rule IDs, and the full grounded knowledge packs are intentionally disabled.
+description: Write natural-language reports, independent answers, and one-round rebuttals for one Castle chamber using only confirmed chart facts, a chamber persona, and compact hallucination safeguards. Use for vivid BaZi, Ziwei, Western astrology, Jyotish, numerology, Human Design, or Dreamspell testimony when strict JSON claims, rule IDs, and the full grounded knowledge packs are intentionally disabled.
 ---
 
 # Guided Chamber Reading
@@ -28,9 +28,15 @@ voice and framing, never as evidence.
 7. Keep the selected persona recognizable but restrained. Metaphor may shape cadence;
    it may not add traits, certainty, prophecy, sacred authority, or scientific claims.
 
-## Output
+## Task modes
 
-Return Simplified Chinese natural language only, with four to seven useful headings.
-Write a cohesive report rather than a fact-by-fact paraphrase. End with a short,
-reversible observation or question the visitor can examine in lived experience.
-Do not output JSON, evidence IDs, rule IDs, confidence scores, or chain-of-thought.
+- For a general report, return four to seven useful headings and a cohesive synthesis
+  rather than a fact-by-fact paraphrase. End with a short, reversible observation.
+- For an independent answer, answer the visitor directly without seeing other
+  chambers. Stay inside this chamber's confirmed facts.
+- For a rebuttal, compare the original answer with the supplied first-round testimony.
+  Address one material agreement or tension. Maintain, narrow, or concede explicitly;
+  do not manufacture disagreement for drama.
+
+Return Simplified Chinese natural language only. Do not output JSON, evidence IDs,
+rule IDs, confidence scores, or chain-of-thought.

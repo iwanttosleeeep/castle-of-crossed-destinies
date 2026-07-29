@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, patch
 from fastapi import HTTPException, UploadFile
 
 from backend.app import main
-from backend.app.schemas import BirthProfile, CaseCreateRequest, Fact
+from backend.app.schemas import BirthProfile, CaseCreateRequest, DebateRequest, Fact
 from backend.app.store import CaseStore
 from backend.app.tribunal import agreement_score
 
@@ -240,6 +240,35 @@ class WorkflowApiTests(unittest.IsolatedAsyncioTestCase):
         pure.assert_not_awaited()
         self.assertEqual(assembled["report_mode"], "guided")
         self.assertEqual(assembled["reports"]["bazi"]["mode"], "guided")
+
+        guided_hearing = {
+            "mode": "guided",
+            "question": "职业选择怎么看？",
+            "answers": [],
+            "challenges": [],
+            "rebuttals": [],
+            "summary": {"closing": "总结"},
+            "guided_answers": [],
+            "guided_rebuttals": [],
+            "guided_summary": "总结",
+        }
+        grounded_debate = AsyncMock()
+        with patch(
+            "backend.app.main.run_guided_debate",
+            new=AsyncMock(return_value=(guided_hearing, None)),
+        ) as guided_debate, patch("backend.app.main.run_debate", grounded_debate):
+            hearing = await main.create_debate(
+                created["case_id"],
+                DebateRequest(question="职业选择怎么看？"),
+                created["resume_token"],
+                "request-key",
+                "deepseek-v4-flash",
+            )
+
+        guided_debate.assert_awaited_once()
+        grounded_debate.assert_not_awaited()
+        self.assertEqual(hearing["mode"], "guided")
+        self.assertEqual(hearing["id"], "hearing-1")
 
 
 class TribunalScoreTests(unittest.TestCase):

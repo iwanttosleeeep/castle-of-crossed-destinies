@@ -9,6 +9,7 @@ from .debate import run_debate
 from .deepseek import THEMES, extract_facts_only, run_chamber_skill
 from .files import extract_bytes, read_upload
 from .freeform import run_free_chamber, run_free_tribunal, run_guided_chamber
+from .guided_debate import run_guided_debate
 from .providers import SYSTEMS
 from .schemas import CaseCreateRequest, DebateRequest, Fact, FactConfirmation
 from .store import CaseStore
@@ -265,13 +266,20 @@ async def create_debate(
     validate_model(deepseek_model)
     if not payload.get("reports"):
         raise HTTPException(409, "请先生成七份 general reports")
-    if payload.get("report_mode") in {"free", "guided"}:
-        raise HTTPException(409, "自然语言模式暂不执行结构化交叉质询；请切换 Grounded Skills 模式重新生成后再提问")
+    if payload.get("report_mode") == "free":
+        raise HTTPException(409, "纯 API 对照模式暂不执行交叉质询；请切换轻量 Skill 或 Grounded Skills 模式重新生成")
     facts_by_system = {
         system: [Fact.model_validate(item) for item in items]
         for system, items in payload["confirmed_facts"].items()
     }
-    hearing, warning = await run_debate(request.question, facts_by_system, deepseek_key, deepseek_model)
+    if payload.get("report_mode") == "guided":
+        hearing, warning = await run_guided_debate(
+            request.question, facts_by_system, deepseek_key, deepseek_model
+        )
+    else:
+        hearing, warning = await run_debate(
+            request.question, facts_by_system, deepseek_key, deepseek_model
+        )
     if warning or not hearing:
         raise HTTPException(502, warning or "质询未完成")
     async with case_write_lock:
