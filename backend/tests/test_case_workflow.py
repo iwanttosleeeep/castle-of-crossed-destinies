@@ -53,6 +53,49 @@ class WorkflowApiTests(unittest.IsolatedAsyncioTestCase):
         created = await main.create_case(CaseCreateRequest(systems=["bazi"]))
         self.assertNotIn("profile", created)
 
+    async def test_case_export_contains_all_persisted_results_without_secrets(self):
+        created = await self.create_case()
+        payload = main.get_store().get(created["case_id"], created["resume_token"])
+        payload["confirmed_facts"] = {
+            "bazi": [
+                {
+                    "id": "bazi.fact-1",
+                    "label": "日主",
+                    "value": "<script>甲木</script>",
+                    "time_sensitive": False,
+                    "source_span": "PAGE 1: 日主甲木",
+                }
+            ]
+        }
+        payload["reports"] = {
+            "bazi": {"system_id": "bazi", "display_name": "BaZi 八字", "text": "## 八字报告\n\n**正文**"}
+        }
+        payload["tribunal"] = {"summary": "## 共识\n\n审议正文", "disclaimer": "不是事实证明"}
+        payload["debates"] = [
+            {
+                "id": "hearing-1",
+                "question": "如何选择？",
+                "guided_answers": [{"system_id": "bazi", "text": "独立回答"}],
+                "guided_rebuttals": [{"system_id": "bazi", "text": "一次反驳"}],
+                "guided_summary": "主持人总结",
+                "warnings": [],
+            }
+        ]
+        main.get_store().save(payload)
+
+        response = await main.export_case(created["case_id"], created["resume_token"])
+        markdown = response.body.decode("utf-8")
+
+        self.assertIn("## I. Confirmed dossier", markdown)
+        self.assertIn("## 八字报告", markdown)
+        self.assertIn("审议正文", markdown)
+        self.assertIn("独立回答", markdown)
+        self.assertIn("一次反驳", markdown)
+        self.assertIn("主持人总结", markdown)
+        self.assertIn("&lt;script&gt;甲木&lt;/script&gt;", markdown)
+        self.assertNotIn(created["resume_token"], markdown)
+        self.assertEqual(response.headers["content-disposition"], f'attachment; filename="{created["case_id"]}.md"')
+
     async def test_text_upload_only_saves_extracted_facts_not_raw_file(self):
         created = await self.create_case()
         extracted = [

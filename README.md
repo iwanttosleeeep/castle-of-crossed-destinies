@@ -16,6 +16,8 @@
 - Markdown 标题、列表、粗体、斜体、引用与行内代码安全渲染
 - Tribunal 区分 genuine convergence、表面共识、直接冲突、侧重差异与不可比较
 - 用户提问后：独立回答 → 每室一次 rebuttal → 主持人结案总结
+- 一键导出完整 Markdown 案卷：确认事实、七份报告、Tribunal 与所有庭审记录
+- 结束庭审后清空当前浏览器会话并返回新案件；服务器旧案仍可凭令牌恢复
 - SQLite 案件保存与恢复令牌；API Key 和原始上传文件不进入数据库
 
 当前运行中的轻量 Skill 位于 `skills/guided-chamber-reading/`。每间 chamber 的报告、

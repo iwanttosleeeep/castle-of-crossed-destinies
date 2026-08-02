@@ -98,5 +98,15 @@
 .verdict h4{font:23px 'Playfair Display';font-weight:400;margin:0 0 9px}
 .guided-verdict .markdown-text p{font-size:13px;line-height:1.75}
 
+.case-closure{max-width:1080px;margin:80px auto 0;padding:40px;border:1px solid #c6a9c1;background:#f8f0f6;box-shadow:7px 8px 0 #bca2b9}
+.case-closure h2{font-size:43px}
+.case-closure>p:not(.eyebrow){max-width:660px;font-size:12px;line-height:1.7;color:var(--muted)}
+.case-closure>div{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:24px}
+.case-closure button{border:0;padding:15px 18px;cursor:pointer;font:10px 'DM Mono';letter-spacing:.08em}
+.case-closure button:disabled{opacity:.55;cursor:wait}
+.export-case{background:var(--violet-deep);color:white}
+.end-case{background:#dfcedd;color:var(--violet-deep)}
+.export-case:hover,.end-case:hover{transform:translateY(-2px)}
+
 @media(max-width:900px){.review-grid,.report-grid{grid-template-columns:1fr}.passport{margin:35px 24px;grid-template-columns:1fr}.passport code{max-width:100%}.regenerate-panel{grid-template-columns:1fr}.regenerate-panel button{width:100%}}
-@media(max-width:760px){.answers,.guided-rebuttals{grid-template-columns:1fr}.fact-row{grid-template-columns:1fr 25px}.fact-row input{grid-column:1}.fact-row textarea{grid-column:1}.fact-row button{grid-column:2;grid-row:1/3}.fact-row small{grid-column:1/-1}.review{padding-left:18px;padding-right:18px}}
+@media(max-width:760px){.answers,.guided-rebuttals,.case-closure>div{grid-template-columns:1fr}.case-closure{padding:27px 20px}.fact-row{grid-template-columns:1fr 25px}.fact-row input{grid-column:1}.fact-row textarea{grid-column:1}.fact-row button{grid-column:2;grid-row:1/3}.fact-row small{grid-column:1/-1}.review{padding-left:18px;padding-right:18px}}

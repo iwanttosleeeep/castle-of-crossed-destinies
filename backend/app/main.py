@@ -4,8 +4,10 @@ from typing import Annotated
 
 from fastapi import FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 
 from .deepseek import extract_facts_only
+from .export import export_case_markdown
 from .files import extract_bytes, read_upload
 from .guided_debate import run_guided_debate
 from .guided_reports import run_guided_chamber, run_guided_tribunal
@@ -54,6 +56,19 @@ async def restore_case(
     case_token: Annotated[str | None, Header(alias="X-Case-Token")] = None,
 ):
     return public_case(authorize(case_id, case_token))
+
+
+@app.get("/cases/{case_id}/export.md")
+async def export_case(
+    case_id: str,
+    case_token: Annotated[str | None, Header(alias="X-Case-Token")] = None,
+):
+    markdown = export_case_markdown(authorize(case_id, case_token))
+    return Response(
+        content=markdown,
+        media_type="text/markdown; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{case_id}.md"'},
+    )
 
 
 @app.post("/cases/{case_id}/sources/{system_id}")
