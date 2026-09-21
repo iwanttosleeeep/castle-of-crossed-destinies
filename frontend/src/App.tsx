@@ -1,4 +1,5 @@
 import { FormEvent, ReactNode, useState } from 'react'
+import BirthChartForm, { BirthInput } from './BirthChartForm'
 
 type Fact = { id:string; label:string; value:string; time_sensitive:boolean; source_span?:string|null; extraction_confidence?:number|null }
 type Extraction = { system_id:string; display_name:string; filename:string; extracted_characters:number; source_bytes?:number; extraction_engine?:string; facts:Fact[]; source_commentary:string[]; warnings:string[]; confirmed:boolean }
@@ -6,7 +7,8 @@ type ChamberReport = { system_id:string; display_name:string; text?:string|null;
 type GuidedTestimony = { system_id:string; text:string }
 type Hearing = { id:string; question:string; guided_answers?:GuidedTestimony[]; guided_rebuttals?:GuidedTestimony[]; guided_summary?:string; warnings?:string[] }
 type Tribunal = { summary:string; disclaimer:string }
-type CaseData = { case_id:string; systems:string[]; status:string; extractions:Record<string,Extraction>; confirmed_facts:Record<string,Fact[]>; reports:Record<string,ChamberReport>; tribunal?:Tribunal|null; debates:Hearing[]; report_warnings?:string[] }
+type Calculation = { input:BirthInput; location:{name:string;countrycode:string;timezone:string}|null; utc:string|null; utc_offset_hours:number|null; dst_hours:number|null; versions:Record<string,string> }
+type CaseData = { case_id:string; systems:string[]; status:string; extractions:Record<string,Extraction>; confirmed_facts:Record<string,Fact[]>; reports:Record<string,ChamberReport>; tribunal?:Tribunal|null; debates:Hearing[]; report_warnings?:string[]; calculation?:Calculation }
 
 const systems = [
   ['bazi', 'BaZi 八字', '四柱 · 五行 · 十神'],
@@ -20,6 +22,7 @@ const systems = [
 
 export default function App() {
   const [stage, setStage] = useState<'entry'|'review'|'report'>('entry')
+  const [entryMode, setEntryMode] = useState<'calculate'|'upload'>('calculate')
   const [selected, setSelected] = useState<string[]>(systems.map(([id]) => id))
   const [files, setFiles] = useState<Record<string,File|null>>({})
   const [apiKey, setApiKey] = useState('')
@@ -37,6 +40,14 @@ export default function App() {
     if (apiKey) headers['X-DeepSeek-Key'] = apiKey
     if (caseToken) headers['X-Case-Token'] = caseToken
     return headers
+  }
+
+  async function calculateBirth(input:BirthInput) {
+    setError('');setLoading('本地引擎正在计算盘面…')
+    try {
+      const created=await api('/api/cases/calculate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(input)})
+      setCaseToken(created.resume_token);setCaseData(created);setStage('review');scrollTo('review')
+    }catch(caught){setError(messageOf(caught))}finally{setLoading('')}
   }
 
   async function startCase(event:FormEvent<HTMLFormElement>) {
@@ -67,7 +78,7 @@ export default function App() {
     setError(''); setLoading('正在封存用户确认的事实…')
     try {
       await Promise.all(caseData.systems.map(id => api(`/api/cases/${caseData.case_id}/facts/${id}`, {method:'PUT',headers:{...providerHeaders(),'Content-Type':'application/json'},body:JSON.stringify({facts:caseData.extractions[id].facts})})))
-      setLoading('七间密室正在独立撰写报告；随后召开 Tribunal…')
+      setLoading(`${caseData.systems.length} 间密室正在独立撰写报告；随后召开 Tribunal…`)
       const assembled = await api(`/api/cases/${caseData.case_id}/reports`, {method:'POST',headers:providerHeaders()})
       setCaseData(assembled); setStage('report'); scrollTo('report')
     } catch (caught) { setError(messageOf(caught)) } finally { setLoading('') }
@@ -109,20 +120,20 @@ export default function App() {
 
   return <main>
     <nav><span className="site-title">THE CASTLE OF CROSSED DESTINIES</span><a href="#method">Method</a></nav>
-    <section className="hero"><p className="eyebrow">SEVEN SEALED CHAMBERS · ONE TRIBUNAL</p><h1><em>THE CASTLE OF<br/>CROSSED DESTINIES</em></h1><p className="lede">上传你已有的七套报告。城堡先只抽取盘面事实，等你逐项确认；七间密室彼此隔离作证，最后才在宴会厅相互质询。</p><div className="rule"/><p className="note">Files are transient · API keys are never stored · Readings stay inside confirmed facts</p><div className="castle-card"><img src="/castle-card.jpg" alt="The Castle of Crossed Destinies card"/></div></section>
+    <section className="hero"><p className="eyebrow">SEVEN SEALED CHAMBERS · ONE TRIBUNAL</p><h1><em>THE CASTLE OF<br/>CROSSED DESTINIES</em></h1><p className="lede">从一个出生时刻开始，让不同的象征体系彼此作证。城堡在本地计算盘面，密室独立撰写解读，最后在宴会厅相互质询。也可带着已有报告入场。</p><div className="rule"/><p className="note">Local chart engines · Independent readings · One shared question</p><div className="castle-card"><img src="/castle-card.jpg" alt="The Castle of Crossed Destinies card"/></div></section>
 
-    <section className="entry" id="entry"><div><p className="eyebrow">I. OPEN A CASE</p><h2>Bring your seven dossiers.</h2><p>只需选择体系并上传 PDF、TXT 或图片；姓名、生日、出生时间、地点与时区都不需要填写。</p><RestoreForm id={restoreId} token={restoreToken} setId={setRestoreId} setToken={setRestoreToken} submit={restoreCase}/></div>
-      <form onSubmit={startCase}>
+    {!caseData&&<section className="entry" id="entry"><div><p className="eyebrow">I. OPEN A CASE</p><h2>One moment.<br/>Many readings.</h2><p>不必先去其他网站找报告。七间密室都可自动排盘；只选数秘和 Dreamspell 时，填出生日期就够了。</p><div className="entry-modes" role="group" aria-label="入场方式"><button type="button" aria-pressed={entryMode==='calculate'} onClick={()=>{setEntryMode('calculate');setError('')}}>自动排盘</button><button type="button" aria-pressed={entryMode==='upload'} onClick={()=>{setEntryMode('upload');setError('')}}>文档上传 · 七体系</button></div><RestoreForm id={restoreId} token={restoreToken} setId={setRestoreId} setToken={setRestoreToken} submit={restoreCase}/></div>
+      {entryMode==='calculate'?<BirthChartForm submit={calculateBirth} loading={loading} error={error}/>:<form onSubmit={startCase}>
         <div className="key-panel"><label>DeepSeek API Key<input type="password" autoComplete="off" value={apiKey} onChange={e=>setApiKey(e.target.value)} placeholder="sk-...（只在页面内存）"/></label><label>模型<select value={model} onChange={e=>setModel(e.target.value)}><option value="deepseek-v4-flash">V4 Flash</option><option value="deepseek-v4-pro">V4 Pro</option></select></label>{insecureRemote&&<p className="http-key-warning">⚠ 当前页面使用 HTTP，Key 的传输没有 HTTPS 加密。请只短暂使用可撤销的测试 Key。</p>}<p>结构化 TXT/JSON 由服务器直接解析；其他文本由 DeepSeek 抽取显式事实。原文件、完整文本与 API Key 均不保存。</p></div>
         <fieldset><legend>选择密室并上传报告</legend><div className="systems upload-systems">{systems.map(([id,title,detail]) => <div className={selected.includes(id)?'system upload active':'system upload'} key={id}><button type="button" onClick={()=>setSelected(value=>value.includes(id)?value.filter(item=>item!==id):[...value,id])}><b>{title}</b><small>{detail}</small><i>{selected.includes(id)?'✓':'+'}</i></button>{selected.includes(id)&&<label className="file"><input type="file" accept=".pdf,.txt,.md,.png,.jpg,.jpeg,.webp,.tif,.tiff" onChange={e=>setFiles({...files,[id]:e.target.files?.[0]||null})}/><span>{files[id]?.name || '选择 PDF / TXT / 图片'}</span></label>}</div>)}</div></fieldset>
         {error&&<p className="error">{error}</p>}<button className="enter" disabled={!!loading||!selected.length}>{loading||'CREATE CASE & EXTRACT FACTS'}</button>
-      </form>
-    </section>
+      </form>}
+    </section>}
 
     {caseData && <CasePassport data={caseData} token={caseToken}/>}
-    {stage==='review' && caseData && <Review data={caseData} updateFacts={updateFacts} upload={uploadToExisting} submit={confirmAndGenerate} loading={loading} error={error}/>}
+    {stage==='review' && caseData && <Review data={caseData} updateFacts={updateFacts} upload={uploadToExisting} submit={confirmAndGenerate} loading={loading} error={error} access={<section className="review-access"><label>DeepSeek API Key（仅 AI 解读使用；服务器已配置时可留空）<input type="password" autoComplete="off" value={apiKey} onChange={e=>setApiKey(e.target.value)} placeholder="sk-...（只在页面内存）"/></label><label>模型<select value={model} onChange={e=>setModel(e.target.value)}><option value="deepseek-v4-flash">V4 Flash</option><option value="deepseek-v4-pro">V4 Pro</option></select></label>{insecureRemote&&<p className="http-key-warning">当前是 HTTP，Key 传输未加密。建议配置 HTTPS 后解读。</p>}<button type="button" onClick={endCase} disabled={!!loading}>退出本案 · 重新开始</button></section>}/>}
     {stage==='report' && caseData && <ReportView data={caseData} providerHeaders={providerHeaders} setData={setCaseData} review={()=>{setStage('review');scrollTo('review')}} endCase={endCase} apiKey={apiKey} setApiKey={setApiKey} loading={loading} setLoading={setLoading} error={error} setError={setError}/>}
-    <section className="method" id="method"><p className="eyebrow">THE METHOD</p><h2>Castle parses. Seven chambers testify.</h2><p>报告先被整理成可核对事实；确认后，每间密室只读取自己的资料和轻量人物 Skill。Tribunal 比较独立报告，提问阶段再进行一次回答、rebuttal 与总结。</p></section><footer>THE CASTLE OF CROSSED DESTINIES <span>Symbolic interpretation—not proof, diagnosis, or professional advice.</span></footer>
+    <section className="method" id="method"><p className="eyebrow">THE METHOD</p><h2>Calculate. Contemplate. Cross-examine.</h2><p>本地引擎计算，或从报告抽取事实。确认后，每间密室只读取自己的资料和轻量人物 Skill。Tribunal 比较独立报告，提问阶段再进行一次回答、rebuttal 与总结。计算可重复，不等于象征性解释获得科学验证。</p><p className="engine-credits">Local libraries (MIT): <a href="https://github.com/openfate-ai/bazi-engine">OpenFate BaZi</a> · <a href="https://github.com/SylarLong/iztro">iztro</a> · <a href="https://github.com/cosinekitty/astronomy">Astronomy Engine</a> · <a href="https://github.com/domalhambra/hd-chart-engine">hd-chart-engine</a> · <a href="https://github.com/Unforced-Dev/natalengine">NatalEngine</a></p></section><footer>THE CASTLE OF CROSSED DESTINIES <span>Symbolic interpretation—not proof, diagnosis, or professional advice.</span></footer>
   </main>
 }
 
@@ -130,7 +141,16 @@ function RestoreForm({id,token,setId,setToken,submit}:any) { return <form classN
 
 function CasePassport({data,token}:{data:CaseData;token:string}) { const [copied,setCopied]=useState(false); return <section className="passport"><div><p className="eyebrow">CASE PASSPORT</p><h3>{data.case_id}</h3><p>恢复令牌只显示在首次创建时。请现在保存；服务器只保存它的哈希。</p></div><code>{token || '令牌已在创建时发放'}</code>{token&&<button onClick={()=>navigator.clipboard.writeText(`${data.case_id}\n${token}`).then(()=>setCopied(true))}>{copied?'COPIED':'COPY ID + TOKEN'}</button>}</section> }
 
-function Review({data,updateFacts,upload,submit,loading,error}:{data:CaseData;updateFacts:(id:string,facts:Fact[])=>void;upload:(id:string,file:File)=>void;submit:()=>void;loading:string;error:string}) { return <section className="review" id="review"><header><p className="eyebrow">II. USER CONFIRMATION</p><h2>Check every extracted fact.</h2><p>修正识别错误，删除原报告的解释性句子；需要时可手动补充报告明确写出的盘面事实。</p></header><div className="review-grid">{data.systems.map(id=>data.extractions[id]?<FactEditor key={id} extraction={data.extractions[id]} onChange={facts=>updateFacts(id,facts)} onUpload={file=>upload(id,file)}/>:<MissingUpload key={id} systemId={id} onUpload={file=>upload(id,file)}/>)}</div>{error&&<p className="error centered">{error}</p>}<button className="enter assemble" onClick={submit} disabled={!!loading}>{loading||'USER CONFIRMED · ASSEMBLE REPORTS'}</button></section> }
+function Review({data,updateFacts,upload,submit,loading,error,access}:{data:CaseData;updateFacts:(id:string,facts:Fact[])=>void;upload:(id:string,file:File)=>void;submit:()=>void;loading:string;error:string;access:ReactNode}) {
+  return <section className="review" id="review"><header><p className="eyebrow">II. USER CONFIRMATION</p><h2>{data.calculation?'Your charts are ready.':'Check every extracted fact.'}</h2><p>{data.calculation?'请核对出生资料与排盘约定。盘面已由本地引擎生成，无需再上传报告；你仍可展开查看和修改。':'修正识别错误，删除原报告的解释性句子；需要时可手动补充报告明确写出的盘面事实。'}</p></header>
+    {data.calculation&&<div className="calculation-summary"><b>{data.calculation.input.birth_date}{data.calculation.input.birth_time&&` · ${data.calculation.input.birth_time}`}</b>{data.calculation.location&&<p>{data.calculation.location.name} / {data.calculation.location.countrycode} · {data.calculation.location.timezone}</p>}{data.calculation.utc&&<p>UTC {data.calculation.utc} · 夏令时偏移 {data.calculation.dst_hours} 小时</p>}<p>已生成 {data.systems.length} 套盘面。各体系的流派、算法及未计算项目见下方「计算约定 / 分析边界」。</p><small>资料填错时请使用「退出本案 · 重新开始」。修改下方事实不会反向改变原始排盘记录。</small></div>}
+    <div className="review-grid">{data.systems.map(id=>{
+      const extraction=data.extractions[id]
+      if(!extraction)return <MissingUpload key={id} systemId={id} onUpload={file=>upload(id,file)}/>
+      const editor=<FactEditor extraction={extraction} onChange={facts=>updateFacts(id,facts)} onUpload={file=>upload(id,file)}/>
+      return extraction.extraction_engine==='local_calculation'?<details className="calculated-dossier" key={id}><summary><b>{systemName(id)}</b><span>{extraction.facts.length} 项盘面数据 · 展开核对</span></summary>{editor}</details>:<div key={id}>{editor}</div>
+    })}</div>{access}{error&&<p className="error centered">{error}</p>}<button className="enter assemble" onClick={submit} disabled={!!loading}>{loading||'确认资料 · 开始独立解读'}</button></section>
+}
 
 function FactEditor({extraction,onChange,onUpload}:{extraction:Extraction;onChange:(facts:Fact[])=>void;onUpload:(file:File)=>void}) { const add=()=>onChange([...extraction.facts,{id:`${extraction.system_id}.manual-${Date.now()}`,label:'',value:'',time_sensitive:!['numerology','dreamspell'].includes(extraction.system_id),source_span:'用户根据原报告手动补充',extraction_confidence:1}]); return <article className="fact-editor"><div className="editor-head"><div><p>{extraction.display_name}</p><small>{extraction.filename} · {engineName(extraction.extraction_engine)} · {formatSize(extraction.source_bytes||0)}</small></div><span>{extraction.facts.length} FACTS</span></div><label className="replace-file">重新上传<input type="file" accept=".pdf,.txt,.md,.png,.jpg,.jpeg,.webp,.tif,.tiff" onChange={e=>e.target.files?.[0]&&onUpload(e.target.files[0])}/></label>{extraction.warnings.map(item=><p className="warning" key={item}>{item}</p>)}{extraction.facts.map((fact,index)=><div className="fact-row" key={fact.id}><input aria-label="事实名称" value={fact.label} onChange={e=>onChange(extraction.facts.map((item,i)=>i===index?{...item,label:e.target.value}:item))}/><textarea aria-label="事实内容" value={fact.value} onChange={e=>onChange(extraction.facts.map((item,i)=>i===index?{...item,value:e.target.value}:item))}/><button title="删除" onClick={()=>onChange(extraction.facts.filter((_,i)=>i!==index))}>×</button>{fact.source_span&&<small>{fact.source_span}</small>}</div>)}<button className="add-fact" onClick={add}>+ ADD EXPLICIT FACT</button>{extraction.source_commentary.length>0&&<details><summary>已排除的原报告解释（{extraction.source_commentary.length}）</summary>{extraction.source_commentary.map(item=><p key={item}>{item}</p>)}</details>}</article> }
 function MissingUpload({systemId,onUpload}:{systemId:string;onUpload:(file:File)=>void}) { return <article className="fact-editor missing-upload"><p>{systemName(systemId)}</p><small>这份报告尚未上传，或上次上传在网络中断前没有完成。</small><label>继续上传 PDF / TXT / 图片<input type="file" accept=".pdf,.txt,.md,.png,.jpg,.jpeg,.webp,.tif,.tiff" onChange={e=>e.target.files?.[0]&&onUpload(e.target.files[0])}/></label></article> }
@@ -180,8 +200,8 @@ function MarkdownText({text,className=''}:{text:string;className?:string}) {
 function inlineMarkdown(text:string):ReactNode[] { return text.split(/(\*\*.+?\*\*|__.+?__|`.+?`|\*[^*]+?\*)/g).filter(Boolean).map((token,index)=>token.startsWith('**')&&token.endsWith('**')?<strong key={index}>{token.slice(2,-2)}</strong>:token.startsWith('__')&&token.endsWith('__')?<strong key={index}>{token.slice(2,-2)}</strong>:token.startsWith('`')&&token.endsWith('`')?<code key={index}>{token.slice(1,-1)}</code>:token.startsWith('*')&&token.endsWith('*')?<em key={index}>{token.slice(1,-1)}</em>:token) }
 
 function systemName(id:string) { return systems.find(([system])=>system===id)?.[1] || id.replaceAll('_',' ') }
-function engineName(engine?:string) { return ({structured_text:'Deterministic structured parser',deepseek_text:'Local text + DeepSeek',manual_required:'Manual review'} as Record<string,string>)[engine||'']||'Legacy extraction' }
+function engineName(engine?:string) { return ({local_calculation:'本地确定性排盘',structured_text:'Deterministic structured parser',deepseek_text:'Local text + DeepSeek',manual_required:'Manual review'} as Record<string,string>)[engine||'']||'Legacy extraction' }
 function formatSize(bytes:number) { return bytes?`${Math.max(1,Math.round(bytes/1024)).toLocaleString()} KB`:'size unavailable' }
 function scrollTo(id:string) { setTimeout(()=>document.querySelector(`#${id}`)?.scrollIntoView({behavior:'smooth'}),80) }
-async function api(url:string,init?:RequestInit) { const response=await fetch(url,init); const body=await response.json().catch(()=>({})); if(!response.ok) throw new Error(body.detail||`HTTP ${response.status}`); return body }
+async function api(url:string,init?:RequestInit) { const response=await fetch(url,init); const body=await response.json().catch(()=>({})); if(!response.ok) throw new Error(Array.isArray(body.detail)?body.detail.map((item:{msg:string})=>item.msg).join('；'):body.detail||`HTTP ${response.status}`); return body }
 function messageOf(caught:unknown) { return caught instanceof Error?caught.message:'无法连接到后端，请检查 FastAPI、反向代理或服务器日志。' }

@@ -2,7 +2,7 @@ import asyncio
 from contextlib import asynccontextmanager
 from typing import Annotated
 
-from fastapi import FastAPI, File, Header, HTTPException, UploadFile
+from fastapi import FastAPI, File, Header, HTTPException, UploadFile, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 
@@ -15,6 +15,7 @@ from .providers import SYSTEMS
 from .schemas import CaseCreateRequest, DebateRequest, Fact, FactConfirmation
 from .store import CaseStore
 from .structured import extract_structured_facts
+from .calculation import BirthRequest, calculate_case, search_locations
 
 
 store: CaseStore | None = None
@@ -47,6 +48,20 @@ async def health():
 async def create_case(request: CaseCreateRequest):
     selected = validate_systems(request.systems)
     payload, token = get_store().create(selected)
+    return public_case(payload) | {"resume_token": token}
+
+
+@app.get("/locations")
+async def locations(q: str = Query(min_length=2, max_length=80)):
+    return {"locations": await asyncio.to_thread(search_locations, q), "attribution": "GeoNames · CC BY 4.0"}
+
+
+@app.post("/cases/calculate")
+async def create_calculated_case(request: BirthRequest):
+    extractions, metadata = await calculate_case(request)
+    payload, token = get_store().create(request.systems)
+    payload.update(extractions=extractions, calculation=metadata, status="awaiting_confirmation")
+    get_store().save(payload)
     return public_case(payload) | {"resume_token": token}
 
 

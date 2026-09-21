@@ -20,6 +20,12 @@ def export_case_markdown(payload: dict) -> str:
         "## I. Confirmed dossier",
         "",
     ]
+    calculation = payload.get("calculation")
+    if calculation:
+        lines.extend(["### Local calculation provenance", ""])
+        for key, value in calculation.items():
+            lines.append(f"- **{safe(key)}:** {safe(value)}")
+        lines.extend(["", "City data: GeoNames (CC BY 4.0); local libraries: OpenFate BaZi, iztro, Astronomy Engine, hd-chart-engine, NatalEngine (MIT); calculation adapters: Castle. See THIRD_PARTY_NOTICES.md for sources and conventions.", ""])
     for system_id in payload.get("systems", []):
         lines.extend([f"### {safe(SYSTEMS.get(system_id, system_id))}", ""])
         facts = payload.get("confirmed_facts", {}).get(system_id, [])

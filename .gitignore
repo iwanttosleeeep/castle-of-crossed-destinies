@@ -5,6 +5,7 @@ backend/**/__pycache__/
 
 # Node / Vite
 frontend/node_modules/
+engines/node_modules/
 frontend/dist/
 frontend/*.tsbuildinfo
 frontend/vite.config.js
