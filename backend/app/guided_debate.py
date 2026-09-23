@@ -19,7 +19,7 @@ async def run_guided_debate(
     request_model: str | None = None,
 ) -> tuple[dict | None, str | None]:
     """Run independent answers, one rebuttal per chamber, and a plain-text summary."""
-    api_key = request_api_key or os.getenv("DEEPSEEK_API_KEY")
+    api_key = request_api_key
     if not api_key:
         return None, "需要 DeepSeek API Key 才能开始轻量质询。"
 

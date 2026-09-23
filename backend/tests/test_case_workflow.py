@@ -206,16 +206,19 @@ class WorkflowApiTests(unittest.IsolatedAsyncioTestCase):
             )
 
         guided = AsyncMock(return_value=("有人格约束的报告", None))
-        with patch("backend.app.main.run_guided_chamber", guided), patch(
-            "backend.app.main.run_guided_tribunal",
+        from backend.app.jobs import tasks
+        with patch("backend.app.jobs.run_guided_chamber", guided), patch(
+            "backend.app.jobs.run_guided_tribunal",
             new=AsyncMock(return_value=("轻量 Tribunal", None)),
         ):
-            assembled = await main.create_reports(
+            await main.create_reports(
                 created["case_id"],
                 created["resume_token"],
                 "request-key",
                 "deepseek-v4-flash",
             )
+            await asyncio.gather(*list(tasks))
+            assembled = await main.restore_case(created["case_id"],created["resume_token"])
 
         self.assertEqual(guided.await_count, 2)
         self.assertEqual(assembled["reports"]["bazi"]["text"], "有人格约束的报告")
@@ -233,21 +236,20 @@ class WorkflowApiTests(unittest.IsolatedAsyncioTestCase):
             "guided_rebuttals": [],
             "guided_summary": "总结",
         }
-        with patch(
-            "backend.app.main.run_guided_debate",
-            new=AsyncMock(return_value=(guided_hearing, None)),
-        ) as guided_debate:
-            hearing = await main.create_debate(
+        with patch("backend.app.jobs.guided_answer",new=AsyncMock(return_value=("独立回答",None))) as answer, patch(
+            "backend.app.jobs.guided_rebuttal",new=AsyncMock(return_value=("反驳",None))
+        ),patch("backend.app.jobs.guided_summary",new=AsyncMock(return_value=("总结",None))):
+            await main.create_debate(
                 created["case_id"],
                 DebateRequest(question="职业选择怎么看？"),
                 created["resume_token"],
                 "request-key",
                 "deepseek-v4-flash",
             )
-
-        guided_debate.assert_awaited_once()
-        self.assertEqual(hearing["mode"], "guided")
-        self.assertEqual(hearing["id"], "hearing-1")
+            await asyncio.gather(*list(tasks))
+        restored=await main.restore_case(created["case_id"],created["resume_token"])
+        self.assertEqual(answer.await_count,2)
+        self.assertEqual(restored["debates"][0]["guided_summary"],"总结")
 
 
 if __name__ == "__main__":

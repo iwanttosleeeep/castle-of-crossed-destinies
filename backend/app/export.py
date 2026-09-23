@@ -56,11 +56,13 @@ def export_case_markdown(payload: dict) -> str:
         lines.extend([f"> {safe(tribunal['disclaimer'])}", ""])
 
     lines.extend(["## IV. Cross-examinations", ""])
-    debates = payload.get("debates", [])
+    debates = payload.get("debates", []) + [dict(h, archived=True) for h in payload.get("archived_debates", [])]
     if not debates:
         lines.extend(["_No hearing questions were submitted._", ""])
     for index, hearing in enumerate(debates, start=1):
         hearing_id = hearing.get("id") or f"hearing-{index}"
+        if hearing.get("archived"):
+            lines.extend([f"> Archived hearing — earlier facts revision {hearing.get('facts_revision', 'legacy')}; does not describe the current dossier.", ""])
         lines.extend(
             [
                 f"### {safe(hearing_id)}",

@@ -6,4 +6,5 @@ import './skills.css'
 import './card.css'
 import './workflow.css'
 import './calculation.css'
+import './access.css'
 createRoot(document.getElementById('root')!).render(<StrictMode><App /></StrictMode>)

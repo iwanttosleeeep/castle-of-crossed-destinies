@@ -19,7 +19,7 @@ async def run_guided_chamber(
     request_api_key: str | None = None,
     request_model: str | None = None,
 ) -> tuple[str, str | None]:
-    api_key = request_api_key or os.getenv("DEEPSEEK_API_KEY")
+    api_key = request_api_key
     if not api_key:
         return "", "DeepSeek 尚未配置，无法生成报告。"
     prompt = f"""你正在参与《交错命运的城堡》的轻量人格 Skill 模式。
@@ -85,7 +85,7 @@ async def run_guided_tribunal(
 ) -> tuple[str, str | None]:
     if len(reports) < 2:
         return "至少需要两份成功报告，才能比较共性与分歧。", None
-    api_key = request_api_key or os.getenv("DEEPSEEK_API_KEY")
+    api_key = request_api_key
     if not api_key:
         return "", "DeepSeek 尚未配置，无法生成 Tribunal。"
     prompt = """你是《交错命运的城堡》的 Tribunal 主持人。

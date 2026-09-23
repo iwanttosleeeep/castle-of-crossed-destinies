@@ -14,9 +14,9 @@ class CaseCreateRequest(BaseModel):
 
 
 class Fact(BaseModel):
-    id: str
-    label: str
-    value: str
+    id: str = Field(max_length=180)
+    label: str = Field(max_length=240)
+    value: str = Field(max_length=2500)
     time_sensitive: bool = False
     source_span: str | None = None
     extraction_confidence: float | None = None
@@ -28,3 +28,8 @@ class FactConfirmation(BaseModel):
 
 class DebateRequest(BaseModel):
     question: str = Field(min_length=3, max_length=1200)
+    systems: list[str] | None = None
+
+
+class ReportRequest(BaseModel):
+    systems: list[str] | None = None

@@ -1,33 +1,48 @@
 import asyncio
+import os
+import fcntl
 from contextlib import asynccontextmanager
 from typing import Annotated
 
-from fastapi import FastAPI, File, Header, HTTPException, UploadFile, Query
+from fastapi import FastAPI, File, Header, HTTPException, UploadFile, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 
 from .deepseek import extract_facts_only
 from .export import export_case_markdown
 from .files import extract_bytes, read_upload
-from .guided_debate import run_guided_debate
-from .guided_reports import run_guided_chamber, run_guided_tribunal
 from .providers import SYSTEMS
-from .schemas import CaseCreateRequest, DebateRequest, Fact, FactConfirmation
+from .schemas import CaseCreateRequest, DebateRequest, ReportRequest, Fact, FactConfirmation
 from .store import CaseStore
 from .structured import extract_structured_facts
 from .calculation import BirthRequest, calculate_case, search_locations
+from .commerce import Commerce, config
+from .jobs import ACTIVE, Jobs, shutdown
+from .metering import Payer, payer_context
+from .accounts_api import router as account_router
 
 
 store: CaseStore | None = None
 case_write_lock = asyncio.Lock()
-ALLOWED_MODELS = {"deepseek-v4-flash", "deepseek-v4-pro"}
+ALLOWED_MODELS = {"deepseek-flash", "deepseek-v4-flash", "deepseek-v4-pro"}
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     global store
     store = CaseStore()
-    yield
+    # Durable tasks currently use one process; fail closed rather than interrupt another worker.
+    with open(str(store.path)+".worker.lock", "a") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise RuntimeError("Castle requires one API worker for this database")
+        Commerce(store.path).recover()
+        Jobs(Commerce(store.path)).recover()
+        try:
+            yield
+        finally:
+            await shutdown()
 
 
 app = FastAPI(title="The Castle of Crossed Destinies", version="0.2.0", lifespan=lifespan)
@@ -37,6 +52,24 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.include_router(account_router)
+
+
+@app.middleware("http")
+async def request_limits(request: Request, call_next):
+    from fastapi.responses import JSONResponse
+    if request.method in {"POST", "PUT", "DELETE"} or request.url.path == "/locations":
+        # X-Forwarded-For is deliberately not trusted here; configure trusted proxies in Uvicorn.
+        host = request.client.host if request.client else "unknown"
+        try:
+            Commerce().rate("request:"+host, 100)
+        except HTTPException as exc:
+            return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
+    response = await call_next(request)
+    if request.url.path.startswith(("/account", "/cases", "/billing")):
+        response.headers["Cache-Control"] = "no-store"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    return response
 
 
 @app.get("/health")
@@ -73,6 +106,20 @@ async def restore_case(
     return public_case(authorize(case_id, case_token))
 
 
+@app.delete("/cases/{case_id}")
+async def delete_case(case_id: str, case_token: Annotated[str | None, Header(alias="X-Case-Token")] = None):
+    authorize(case_id, case_token)
+    commerce = Commerce(get_store().path)
+    Jobs(commerce)
+    with commerce.transaction() as db:
+        if db.execute("SELECT 1 FROM jobs WHERE case_id=? AND state IN ('queued','running','stopping')", (case_id,)).fetchone():
+            raise HTTPException(409, "请等待当前任务结束后删除案卷")
+        db.execute("UPDATE calls SET result=NULL WHERE job_id IN (SELECT id FROM jobs WHERE case_id=?)", (case_id,))
+        db.execute("DELETE FROM jobs WHERE case_id=?", (case_id,))
+        db.execute("DELETE FROM cases WHERE id=?", (case_id,))
+    return {"deleted": True}
+
+
 @app.get("/cases/{case_id}/export.md")
 async def export_case(
     case_id: str,
@@ -94,9 +141,12 @@ async def upload_source(
     case_token: Annotated[str | None, Header(alias="X-Case-Token")] = None,
     deepseek_key: Annotated[str | None, Header(alias="X-DeepSeek-Key")] = None,
     deepseek_model: Annotated[str | None, Header(alias="X-DeepSeek-Model")] = None,
+    payment_mode: Annotated[str, Header(alias="X-Payment-Mode")] = "byok",
+    authorization: Annotated[str | None, Header()] = None,
 ):
     payload = authorize(case_id, case_token)
     validate_model(deepseek_model)
+    ensure_idle(payload)
     if system_id not in payload["systems"]:
         raise HTTPException(422, "该 chamber 不属于此案件")
     filename = file.filename or "uploaded report"
@@ -118,13 +168,16 @@ async def upload_source(
             extraction_engine = "structured_text"
             warnings.append("已按结构化 TXT/JSON 原样解析；未使用 AI 猜测盘面字段，请仍在确认页核对。")
         else:
-            extracted_facts, excluded_commentary, extraction_warning = await extract_facts_only(
-                system_id,
-                source_text,
-                filename,
-                deepseek_key,
-                deepseek_model,
-            )
+            if payment_mode == "trial":
+                raise HTTPException(409, "免费体验用于两间密室解读，请先使用自动排盘或结构化 TXT")
+            payer, key, model = resolve_payer(payment_mode, authorization, deepseek_key, deepseek_model)
+            marker = payer_context.set(payer)
+            try:
+                extracted_facts, excluded_commentary, extraction_warning = await extract_facts_only(
+                    system_id, source_text, filename, key, model,
+                )
+            finally:
+                payer_context.reset(marker)
             if extracted_facts:
                 facts = extracted_facts
                 commentary = excluded_commentary
@@ -147,10 +200,12 @@ async def upload_source(
     }
     async with case_write_lock:
         payload = authorize(case_id, case_token)
+        ensure_idle(payload)
         payload["extractions"][system_id] = extraction
         payload["confirmed_facts"].pop(system_id, None)
         payload["reports"] = {}
         payload["tribunal"] = None
+        invalidate_facts(payload)
         payload["status"] = "awaiting_confirmation"
         get_store().save(payload)
     return extraction
@@ -173,107 +228,133 @@ async def confirm_facts(
         normalized.append(fact.model_copy(update={"id": fact_id}))
     async with case_write_lock:
         payload = authorize(case_id, case_token)
+        ensure_idle(payload)
         if system_id not in payload["systems"]:
             raise HTTPException(422, "该 chamber 不属于此案件")
-        payload["confirmed_facts"][system_id] = [fact.model_dump(mode="json") for fact in normalized]
+        items = [fact.model_dump(mode="json") for fact in normalized]
+        if items != payload["confirmed_facts"].get(system_id):
+            invalidate_facts(payload)
+            payload["reports"] = {}
+            payload["tribunal"] = None
+        payload["confirmed_facts"][system_id] = items
         if system_id in payload["extractions"]:
             payload["extractions"][system_id]["confirmed"] = True
             payload["extractions"][system_id]["facts"] = payload["confirmed_facts"][system_id]
-        payload["reports"] = {}
-        payload["tribunal"] = None
         payload["status"] = "facts_confirmed" if all(system in payload["confirmed_facts"] for system in payload["systems"]) else "awaiting_confirmation"
         get_store().save(payload)
     return {"system_id": system_id, "facts": payload["confirmed_facts"][system_id], "status": payload["status"]}
 
 
-@app.post("/cases/{case_id}/reports")
+@app.post("/cases/{case_id}/reports", status_code=202)
 async def create_reports(
     case_id: str,
     case_token: Annotated[str | None, Header(alias="X-Case-Token")] = None,
     deepseek_key: Annotated[str | None, Header(alias="X-DeepSeek-Key")] = None,
     deepseek_model: Annotated[str | None, Header(alias="X-DeepSeek-Model")] = None,
+    request: ReportRequest = ReportRequest(),
+    payment_mode: Annotated[str, Header(alias="X-Payment-Mode")] = "byok",
+    authorization: Annotated[str | None, Header()] = None,
 ):
     payload = authorize(case_id, case_token)
-    validate_model(deepseek_model)
-    missing = [system for system in payload["systems"] if system not in payload["confirmed_facts"]]
-    if missing:
-        raise HTTPException(409, f"请先确认这些 chamber 的事实：{', '.join(missing)}")
-    facts_by_system = {
-        system: [Fact.model_validate(item) for item in payload["confirmed_facts"][system]]
-        for system in payload["systems"]
-    }
-    facts_snapshot = payload["confirmed_facts"]
-    results = await asyncio.gather(
-        *(
-            run_guided_chamber(
-                system, SYSTEMS[system], facts_by_system[system], deepseek_key, deepseek_model
-            )
-            for system in payload["systems"]
-        )
-    )
-    reports = {}
-    report_texts = {}
-    warnings = []
-    for system, (report_text, warning) in zip(payload["systems"], results):
-        if report_text:
-            report_texts[system] = report_text
-        if warning:
-            warnings.append(f"{SYSTEMS[system]}: {warning}")
-        reports[system] = {
-            "system_id": system,
-            "display_name": SYSTEMS[system],
-            "text": report_text,
-            "warning": warning,
-        }
-    tribunal_text, tribunal_warning = await run_guided_tribunal(
-        report_texts, deepseek_key, deepseek_model
-    )
-    tribunal = {
-        "summary": tribunal_text,
-        "disclaimer": "这是跨体系叙事比较，不代表科学准确或事实证明。",
-    }
-    if tribunal_warning:
-        warnings.append(tribunal_warning)
-    async with case_write_lock:
-        payload = authorize(case_id, case_token)
-        if payload["confirmed_facts"] != facts_snapshot:
-            raise HTTPException(409, "事实在报告生成期间发生了变化，请重新生成")
-        payload["reports"] = reports
-        payload["tribunal"] = tribunal
-        payload["status"] = "reports_ready"
-        payload["report_warnings"] = warnings
-        get_store().save(payload)
-    return public_case(payload)
+    selected = selected_systems(payload, request.systems)
+    if payment_mode == "trial" and len(selected) != 2:
+        raise HTTPException(422, "免费体验请选择两间密室")
+    payer, key, model = resolve_payer(payment_mode, authorization, deepseek_key, deepseek_model)
+    runner = Jobs(payer.commerce)
+    job, launch = runner.create(payload, "reports", selected, model, payer)
+    if launch:
+        runner.launch(job, payload, key, payer)
+    return Jobs.public(job)
 
 
-@app.post("/cases/{case_id}/debates")
+@app.post("/cases/{case_id}/debates", status_code=202)
 async def create_debate(
     case_id: str,
     request: DebateRequest,
     case_token: Annotated[str | None, Header(alias="X-Case-Token")] = None,
     deepseek_key: Annotated[str | None, Header(alias="X-DeepSeek-Key")] = None,
     deepseek_model: Annotated[str | None, Header(alias="X-DeepSeek-Model")] = None,
+    payment_mode: Annotated[str, Header(alias="X-Payment-Mode")] = "byok",
+    authorization: Annotated[str | None, Header()] = None,
 ):
     payload = authorize(case_id, case_token)
-    validate_model(deepseek_model)
     if not payload.get("reports"):
-        raise HTTPException(409, "请先生成七份 general reports")
-    facts_by_system = {
-        system: [Fact.model_validate(item) for item in items]
-        for system, items in payload["confirmed_facts"].items()
-    }
-    hearing, warning = await run_guided_debate(
-        request.question, facts_by_system, deepseek_key, deepseek_model
-    )
-    if warning or not hearing:
-        raise HTTPException(502, warning or "质询未完成")
-    async with case_write_lock:
-        payload = authorize(case_id, case_token)
-        hearing["id"] = f"hearing-{len(payload['debates']) + 1}"
-        payload["debates"].append(hearing)
-        payload["status"] = "hearing_complete"
-        get_store().save(payload)
-    return hearing
+        raise HTTPException(409, "请先生成至少一份独立报告")
+    if payment_mode == "trial":
+        raise HTTPException(402, "免费体验包含两间密室与 Tribunal；追问请选择案卷额度或自带 Key")
+    selected = selected_systems(payload, request.systems if request.systems is not None else list(payload["reports"])[:3])
+    payer, key, model = resolve_payer(payment_mode, authorization, deepseek_key, deepseek_model)
+    runner = Jobs(payer.commerce)
+    job, launch = runner.create(payload, "debate", selected, model, payer, request.question)
+    if launch:
+        runner.launch(job, payload, key, payer)
+    return Jobs.public(job)
+
+
+@app.post("/cases/{case_id}/jobs/{job_id}/stop", status_code=202)
+async def stop_job(case_id: str, job_id: str,
+    case_token: Annotated[str | None, Header(alias="X-Case-Token")] = None):
+    authorize(case_id, case_token)
+    runner = Jobs(Commerce(get_store().path))
+    if runner.get(job_id)["case_id"] != case_id:
+        raise HTTPException(404, "任务不存在")
+    # Possession of the case token permits stopping without resending a paid key.
+    return Jobs.public(runner.request_stop(job_id))
+
+
+@app.post("/cases/{case_id}/jobs/{job_id}/retry", status_code=202)
+async def retry_job(case_id: str, job_id: str,
+    case_token: Annotated[str | None, Header(alias="X-Case-Token")] = None,
+    deepseek_key: Annotated[str | None, Header(alias="X-DeepSeek-Key")] = None,
+    payment_mode: Annotated[str, Header(alias="X-Payment-Mode")] = "byok",
+    authorization: Annotated[str | None, Header()] = None):
+    payload = authorize(case_id, case_token)
+    runner = Jobs(Commerce(get_store().path))
+    old = runner.get(job_id)
+    if old["case_id"] != case_id:
+        raise HTTPException(404, "任务不存在")
+    payer, key, _ = resolve_payer(payment_mode, authorization, deepseek_key, old["model"])
+    job, launch = runner.resume(job_id, payer)
+    if launch:
+        runner.launch(job, payload, key, payer)
+    return Jobs.public(job)
+
+
+def selected_systems(payload, requested):
+    selected = validate_systems(requested if requested is not None else payload["systems"])
+    if any(s not in payload["systems"] or not payload["confirmed_facts"].get(s) for s in selected):
+        raise HTTPException(409, "请先确认所选密室的事实")
+    return selected
+
+
+def resolve_payer(mode, authorization, key, model):
+    commerce = Commerce(get_store().path)
+    model = model or "deepseek-flash"
+    validate_model(model)
+    if mode == "byok":
+        if not key or not key.strip():
+            raise HTTPException(401, "请填写自己的 DeepSeek Key，或选择 Castle 额度")
+        # Account is deliberately optional and not used for BYOK billing.
+        return Payer(commerce), key.strip(), model
+    if mode not in {"paid", "trial"}:
+        raise HTTPException(422, "无效的付费方式")
+    account_id = commerce.authenticate(authorization)
+    available = config()["trial_available" if mode == "trial" else "hosted_available"]
+    if not available:
+        raise HTTPException(402, "Castle AI 额度暂未开放，可以使用自己的 Key")
+    return Payer(commerce, mode, account_id), os.environ["DEEPSEEK_API_KEY"], "deepseek-flash"
+
+
+def ensure_idle(payload):
+    if any(j["state"] in ACTIVE for j in Jobs(Commerce(get_store().path)).for_case(payload["case_id"])):
+        raise HTTPException(409, "任务进行中，请完成后再修改事实")
+
+
+def invalidate_facts(payload):
+    payload["facts_revision"] = payload.get("facts_revision", 0) + 1
+    if payload.get("debates"):
+        payload.setdefault("archived_debates", []).extend(payload["debates"])
+        payload["debates"] = []
 
 
 def validate_systems(systems: list[str]) -> list[str]:
@@ -299,7 +380,9 @@ def authorize(case_id: str, token: str | None) -> dict:
 
 
 def public_case(payload: dict) -> dict:
-    return {key: value for key, value in payload.items() if key != "resume_token"}
+    result = {key: value for key, value in payload.items() if key != "resume_token"}
+    result["jobs"] = Jobs(Commerce(get_store().path)).for_case(payload["case_id"])
+    return result
 
 
 def get_store() -> CaseStore:

@@ -4,6 +4,12 @@
 
 ## 包含内容
 
+- 三种 AI 入口：自带 Key、Castle 案卷额度、两间密室体验；默认仅开放 BYOK，平台预算为零
+- 后台任务逐篇保存、进度轮询、重启后继续失败步骤、相同请求去重
+- 账户／额度流水／API token 与成本估算；免费与付费全站预算默认 0
+- 免费虚构示范庭审；测试收银台与真实调用额度隔离，真实收款暂未启用
+- [额度、任务与支付测试说明](docs/BILLING-AND-JOBS.md)
+
 - 自动排盘：出生公历日期、准确钟表时间、城市；紫微另需传统性别参数。只选数秘 / Dreamspell 时无需时间和城市
 - 离线 GeoNames 城市搜索、固定版本 IANA 历史时区 / 夏令时解析
 - 八字：四柱、藏干、十神；紫微：十二宫、星曜、生年四化；西占：十天体、ASC/MC、整宫宫位、主要相位
@@ -85,9 +91,13 @@ docker compose cp api:/data/castle-backup.db ./castle-backup.db
 1. 自动排盘：`GET /locations?q=北京` 搜索城市；`POST /cases/calculate` 校验时间、计算盘面并建立案件（不需要 API Key）。文档上传：`POST /cases` 建立空案件。服务端只保存恢复令牌的 SHA-256 哈希。
 2. `POST /cases/{id}/sources/{system}` 临时读取文件并抽取事实；原始文件不落盘。
 3. `PUT /cases/{id}/facts/{system}` 保存用户确认后的事实及必要的短原文定位。
-4. `POST /cases/{id}/reports` 并行生成独立报告，再召开 Tribunal。
-5. `POST /cases/{id}/debates` 执行固定一轮的独立回答、反驳和总结。
+4. `POST /cases/{id}/reports` 返回 202 任务，独立报告完成即保存，再召开 Tribunal。
+5. `POST /cases/{id}/debates` 返回 202 任务，逐步保存独立回答、反驳和总结。
 6. `GET /cases/{id}` 配合 `X-Case-Token` 恢复案件。
+7. `POST /cases/{id}/jobs/{job_id}/retry` 继续未完成步骤；`DELETE /cases/{id}` 永久删除案卷内容。
+
+API Key 留空不再自动使用服务器 Key。必须明确选择 Castle 额度并登录，且运营者已设置预算。
+服务器仅运行一个 API worker。详见上方额度文档；实际售价与订阅暂不启用。
 
 自动排盘在服务器本地运行确定性引擎，计算结果直接成为可确认事实，不经过 AI 抽取。
 上传阶段，本地解析器先直接识别项目的结构化 TXT/JSON；其他
@@ -104,9 +114,9 @@ Tribunal 和辩论记录；自动排盘案件还保存出生资料、城市坐�
 
 支持两种方式：
 
-1. **访客 BYOK**：上传模式在首页输入，自动排盘模式在盘面确认页输入 Key。Key 只保存在当前页面内存，通过
+1. **访客 BYOK**：在页面上方的访问方式面板输入 Key。Key 只保存在当前页面内存，通过
    `X-DeepSeek-Key` 发送给后端后立即转发；不写入 localStorage、数据库或日志。
-2. **自托管默认 Key**：复制并填写仅存放在服务器上的环境文件：
+2. **Castle 额度**：复制并填写仅存放在服务器上的环境文件。需要用户账户、可用点数和运营者已设置的预算，不是留空 Key 的自动回退：
 
 ```bash
 cp backend/.env.example backend/.env
@@ -114,7 +124,9 @@ cp backend/.env.example backend/.env
 
 ```env
 DEEPSEEK_API_KEY=你的密钥
-DEEPSEEK_MODEL=deepseek-v4-flash
+DEEPSEEK_MODEL=deepseek-flash
+CASTLE_FREE_BUDGET_USD=0
+CASTLE_PAID_BUDGET_USD=0
 ```
 
 `DEEPSEEK_API_KEY` 仅由后端读取，绝不能放入前端代码或 Git。

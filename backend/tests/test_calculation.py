@@ -91,8 +91,11 @@ class CalculationWorkflowTests(unittest.IsolatedAsyncioTestCase):
             await main.confirm_facts(case_id,system,FactConfirmation(facts=extraction['facts']),token)
         chamber=AsyncMock(return_value=('本命盘解读',None))
         tribunal=AsyncMock(return_value=('共识与分歧',None))
-        with patch('backend.app.main.run_guided_chamber',chamber),patch('backend.app.main.run_guided_tribunal',tribunal):
-            assembled=await main.create_reports(case_id,token,None,None)
+        from backend.app.jobs import tasks
+        with patch('backend.app.jobs.run_guided_chamber',chamber),patch('backend.app.jobs.run_guided_tribunal',tribunal):
+            await main.create_reports(case_id,token,'synthetic-key',None)
+            await asyncio.gather(*list(tasks))
+            assembled=await main.restore_case(case_id,token)
         self.assertEqual(chamber.await_count,7)
         for call in chamber.call_args_list:
             self.assertTrue(all(f.id.startswith(call.args[0]+'.') for f in call.args[2]))

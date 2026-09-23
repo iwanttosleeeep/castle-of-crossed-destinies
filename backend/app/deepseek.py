@@ -3,10 +3,12 @@ import json
 import logging
 import os
 import secrets
+import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from .schemas import Fact
+from .metering import payer_context, cost_for, upper_cost, GenerationStopped
 
 
 logger = logging.getLogger(__name__)
@@ -30,7 +32,7 @@ async def extract_facts_only(
     request_model: str | None = None,
 ) -> tuple[list[Fact], list[str], str | None]:
     """Extract explicit chart data; do not interpret or calculate missing values."""
-    api_key = request_api_key or os.getenv("DEEPSEEK_API_KEY")
+    api_key = request_api_key
     if not api_key:
         return [], [], "需要 DeepSeek API Key 才能从报告中抽取结构化事实。"
     prompt = f"""You are a strict document extraction engine for the {system_id} chamber.
@@ -58,10 +60,12 @@ Use at most 80 facts. A source_span is mandatory. If no explicit facts are prese
     }
     try:
         body = await call_json(payload, api_key)
-    except (HTTPError, URLError, TimeoutError, KeyError, TypeError, json.JSONDecodeError) as exc:
+    except (HTTPError, URLError, TimeoutError, KeyError, TypeError, ValueError) as exc:
         return [], [], f"DeepSeek 抽取未完成（{public_error_label(exc)}）；请稍后重试或重新上传。"
     facts = []
     for index, item in enumerate(body.get("facts", [])[:80], start=1):
+        if not isinstance(item, dict):
+            continue
         label = bounded_input(item.get("label"), 120)
         value = bounded_input(item.get("value"), 500)
         span = bounded_input(item.get("source_span"), 600)
@@ -79,49 +83,87 @@ Use at most 80 facts. A source_span is mandatory. If no explicit facts are prese
                 ),
             )
         )
-    commentary = [bounded_input(item, 400) for item in body.get("source_commentary", [])[:20]]
+    excluded = body.get("source_commentary", [])
+    commentary = [bounded_input(item, 400) for item in excluded[:20]] if isinstance(excluded, list) else []
     warning = None if facts else "文件文字已读取，但没有识别到可确认的显式盘面事实；请重新上传或手动补充。"
     return facts, [item for item in commentary if item], warning
 
 
 async def call_json(payload: dict, api_key: str) -> dict:
-    """Retry transient provider failures and occasional empty JSON responses."""
-    last_error: Exception | None = None
-    for attempt in range(4):
-        try:
-            response = await asyncio.to_thread(post_json, payload, api_key)
-            content = response["choices"][0]["message"]["content"]
-            if not isinstance(content, str) or not content.strip():
-                raise json.JSONDecodeError("empty JSON content", "", 0)
-            return json.loads(content)
-        except (HTTPError, URLError, TimeoutError, KeyError, TypeError, json.JSONDecodeError) as exc:
-            last_error = exc
-            if isinstance(exc, HTTPError) and exc.code not in {408, 409, 425, 429, 500, 502, 503, 504}:
-                break
-            if attempt < 3:
-                await asyncio.sleep(0.8 * (2**attempt))
-    assert last_error is not None
-    raise last_error
+    return await _call(payload, api_key, json_output=True)
 
 
 async def call_text(payload: dict, api_key: str) -> str:
-    """Return natural-language model content without imposing JSON Output."""
+    return await _call(payload, api_key, json_output=False)
+
+
+provider_slots = asyncio.Semaphore(max(1, int(os.getenv("CASTLE_PROVIDER_CONCURRENCY", "3"))))
+
+
+async def _call(payload: dict, api_key: str, json_output: bool):
+    """One credit reservation; every upstream attempt is independently accounted for."""
+    if not api_key:
+        raise ValueError("missing API key")
+    payer = payer_context.get()
+    if payer:
+        cached = payer.commerce.cached_result(payer.job_id, payer.step)
+        if cached is not None:
+            return cached
+    call_id = None
+    success = False
+    result = None
+    ceiling = upper_cost(payload)
     last_error: Exception | None = None
-    for attempt in range(4):
-        try:
-            response = await asyncio.to_thread(post_json, payload, api_key)
-            content = response["choices"][0]["message"]["content"]
-            if not isinstance(content, str) or not content.strip():
-                raise ValueError("empty text content")
-            return content.strip()
-        except (HTTPError, URLError, TimeoutError, KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
-            last_error = exc
-            if isinstance(exc, HTTPError) and exc.code not in {408, 409, 425, 429, 500, 502, 503, 504}:
-                break
-            if attempt < 3:
-                await asyncio.sleep(0.8 * (2**attempt))
-    assert last_error is not None
-    raise last_error
+    try:
+        if payer:
+            call_id = payer.commerce.reserve_call(payer.account_id, payer.job_id, payer.step, payer.mode, payload["model"], payer.credits)
+        for attempt in range(2):
+            attempt_id = None
+            received = False
+            started = time.monotonic()
+            try:
+                async with provider_slots:
+                    # Check after waiting for a slot and before every retry. In-flight
+                    # requests are allowed to finish so their usage/results are retained.
+                    if payer and payer.should_stop and payer.should_stop():
+                        raise GenerationStopped()
+                    if payer:
+                        attempt_id = payer.commerce.reserve_attempt(call_id, payer.mode, payload["model"], ceiling)
+                    response = await asyncio.to_thread(post_json, payload, api_key)
+                if payer:
+                    usage = response.get("usage")
+                    known = isinstance(usage, dict) and "prompt_tokens" in usage and "completion_tokens" in usage
+                    payer.commerce.finish_attempt(attempt_id, cost_for(payload["model"], usage) if known else ceiling, usage or {}, time.monotonic()-started, not known)
+                received = True
+                choice = response["choices"][0]
+                if choice.get("finish_reason") == "length":
+                    raise ValueError("response truncated")
+                content = choice["message"]["content"]
+                if not isinstance(content, str) or not content.strip():
+                    raise ValueError("empty response")
+                result = json.loads(content) if json_output else content.strip()
+                if json_output and not isinstance(result, dict):
+                    raise ValueError("JSON must be an object")
+                if json_output:
+                    facts = result.get("facts")
+                    if not isinstance(facts, list) or not any(isinstance(f, dict) and all(isinstance(f.get(k), str) and f[k].strip() for k in ("label", "value", "source_span")) for f in facts[:80]):
+                        raise ValueError("no usable extracted facts")
+                success = True
+                return result
+            except (HTTPError, URLError, TimeoutError, KeyError, TypeError, ValueError) as exc:
+                if payer and attempt_id and not received:
+                    rejected = isinstance(exc, HTTPError) and exc.code in {400,401,402,403,404,422,429}
+                    payer.commerce.finish_attempt(attempt_id, 0 if rejected else ceiling, {}, time.monotonic()-started, not rejected)
+                last_error = exc
+                if isinstance(exc, HTTPError) and exc.code not in {408,429,500,502,503,504}:
+                    break
+                if attempt == 0:
+                    await asyncio.sleep(1)
+        assert last_error is not None
+        raise last_error
+    finally:
+        if payer and call_id:
+            payer.commerce.finish_call(call_id, success, result)
 
 
 def bounded_input(value: object, limit: int) -> str:
