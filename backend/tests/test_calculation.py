@@ -64,6 +64,28 @@ class BirthValidationTests(unittest.TestCase):
         self.assertEqual(normalized['standard_offset_hours'],8)
         self.assertEqual(normalized['utc'],'1990-07-01T04:00:00+00:00')
 
+    def test_half_hour_dst_gap_fold_and_skipped_civil_date(self):
+        with self.assertRaises(HTTPException):
+            resolve_civil(datetime(2024,10,6,2,15),'Australia/Lord_Howe')
+        ambiguous=datetime(2024,4,7,1,45)
+        with self.assertRaises(HTTPException):
+            resolve_civil(ambiguous,'Australia/Lord_Howe')
+        a=resolve_civil(ambiguous,'Australia/Lord_Howe',0).astimezone(timezone.utc)
+        b=resolve_civil(ambiguous,'Australia/Lord_Howe',1).astimezone(timezone.utc)
+        self.assertEqual((b-a).total_seconds(),1800)
+        with self.assertRaises(HTTPException):
+            resolve_civil(datetime(2011,12,30,12),'Pacific/Apia')
+
+    def test_fractional_offsets_and_date_only_do_not_invent_an_instant(self):
+        # January is summer in Chatham: 12:45 standard + one hour DST.
+        for zone,seconds in [('Asia/Kathmandu',20700),('Pacific/Chatham',49500)]:
+            with self.subTest(zone=zone):
+                aware=resolve_civil(datetime(2024,1,1,12),zone)
+                self.assertEqual(aware.utcoffset().total_seconds(),seconds)
+        normalized,_=normalize_birth(birth(systems=['numerology','dreamspell'],birth_time='23:59',city_id='1816670',fold=1))
+        self.assertIsNone(normalized['utc'])
+        self.assertNotIn('hour',normalized['civil'])
+
 
 class CalculationWorkflowTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):

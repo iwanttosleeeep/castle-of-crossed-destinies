@@ -155,3 +155,8 @@ npm run build --prefix frontend
 后端找不到 Node 时可配置 `CASTLE_NODE_BIN=/absolute/path/to/node`。
 
 > 命理输出仅供反思与娱乐，不应用于医疗、法律、财务或其他重大决定。
+
+## 边界验证与成本测量
+
+[验证与成本探针说明](docs/VALIDATION-AND-COSTS.md)包含七套引擎的边界回归测试与合成资料成本工具。
+工具默认离线、不调用 API；真实采样需要专用 Key、`--live` 和明确预算上限，且不使用网站数据库。

@@ -78,8 +78,14 @@ export function calculateHumanDesign(input) {
 }
 
 export function vimshottari(moonLongitude,utc) {
-  const fraction=mod(moonLongitude,360/27)/(360/27);
-  const index=Math.floor(mod(moonLongitude)/(360/27))%9;
+  // Use one normalized sector for both lord and balance. Separate floating
+  // modulo/division misclassified exact boundaries (360° differed from 0°).
+  let sector=mod(moonLongitude)*27/360;
+  const nearest=Math.round(sector);
+  if(Math.abs(sector-nearest)<1e-12)sector=nearest; // numerical noise, not a physical orb
+  if(sector===27)sector=0;
+  const whole=Math.floor(sector),fraction=sector-whole;
+  const index=whole%9;
   const yearMs=365.25*DAY_MS;
   let start=Date.parse(utc)-fraction*DASHA_YEARS[DASHA_ORDER[index]]*yearMs;
   const periods=[];

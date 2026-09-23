@@ -3,7 +3,7 @@ import iztro from 'iztro';
 import * as A from 'astronomy-engine';
 import {calculateHumanDesign, calculateJyotish, calculateNumerology, calculateDreamspell} from './additional-charts.mjs';
 
-export const VERSIONS = {adapter:'castle-2', bazi:'@openfate/bazi-engine@1.1.3', ziwei:'iztro@2.6.1', western:'astronomy-engine@2.1.19',jyotish:'natalengine@1.6.0 + hd-chart-engine@0.1.1 + Castle',human_design:'hd-chart-engine@0.1.1 + natalengine@1.6.0 tables + Castle',numerology:'castle-pythagorean-1',dreamspell:'castle-dreamspell-1'};
+export const VERSIONS = {adapter:'castle-3', bazi:'@openfate/bazi-engine@1.1.3', ziwei:'iztro@2.6.1', western:'astronomy-engine@2.1.19',jyotish:'natalengine@1.6.0 + hd-chart-engine@0.1.1 + Castle',human_design:'hd-chart-engine@0.1.1 + natalengine@1.6.0 tables + Castle',numerology:'castle-pythagorean-1',dreamspell:'castle-dreamspell-1'};
 const SIGNS = ['白羊座','金牛座','双子座','巨蟹座','狮子座','处女座','天秤座','天蝎座','射手座','摩羯座','水瓶座','双鱼座'];
 const PLANETS = {Sun:'太阳',Moon:'月亮',Mercury:'水星',Venus:'金星',Mars:'火星',Jupiter:'木星',Saturn:'土星',Uranus:'天王星',Neptune:'海王星',Pluto:'冥王星'};
 const ELEMENTS = {wood:'木',fire:'火',earth:'土',metal:'金',water:'水'};
